@@ -20,7 +20,7 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상 규칙 적용) ] ---
+# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상 규칙 적용 + 택배배송 감지 시 맨 뒤 '택배' 표기) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -68,9 +68,15 @@ def clean_product_name(val):
     
     # 수량이 2개 이상일 때 모델명 뒤에 [수량] 표기 (예: 노트20[2])
     if qty > 1:
-        return f"{target}[{qty}]"
+        result_str = f"{target}[{qty}]"
     else:
-        return target
+        result_str = target
+        
+    # '택배배송' 또는 '택배' 글자가 포함된 경우 맨 뒤에 ' 택배' 표기 추가
+    if '택배' in s:
+        result_str = f"{result_str} 택배"
+        
+    return result_str
 
 # --- [ 정제 및 텍스트 교정 함수 ] ---
 def remove_duplicate_words(addr_str):
