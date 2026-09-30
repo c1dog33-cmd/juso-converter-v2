@@ -20,6 +20,56 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
+# --- [ 상품명 정제 함수 ] ---
+def clean_product_name(val):
+    if pd.isna(val) or not str(val).strip():
+        return ""
+    s = str(val).strip()
+    
+    qty = 1
+    model_name = ""
+    
+    if '☞' in s:
+        parts = s.split('☞')
+        base_part = parts[0].strip()
+        after_part = parts[1].strip() if len(parts) > 1 else ""
+        
+        qty_match = re.match(r'^(\d+)\s*(EA|개)?', after_part, re.IGNORECASE)
+        if qty_match:
+            qty = int(qty_match.group(1))
+            after_model = re.sub(r'^\d+\s*(EA|개)?\s*', '', after_part, flags=re.IGNORECASE).strip()
+        else:
+            after_model = after_part
+            
+        noise_words = {'확인', '네', '..', '.', '오타', '동의', '배송', '바랍니다', '입니다', '네~', '잘부탁드립니다', '1개'}
+        is_noise = not after_model or after_model in noise_words or re.match(r'^[\d\-\.\s]+$', after_model) or len(after_model) < 2
+        
+        if not is_noise:
+            model_name = after_model
+        else:
+            if '//' in base_part:
+                sub_parts = base_part.split('//')
+                candidate = sub_parts[-1].split('(')[0].strip()
+                if candidate:
+                    model_name = candidate
+            elif '/' in base_part:
+                sub_parts = base_part.split('/')
+                candidate = sub_parts[-1].split('(')[0].strip()
+                if candidate:
+                    model_name = candidate
+            else:
+                model_name = base_part
+    else:
+        model_name = s
+        
+    if model_name:
+        model_name = re.sub(r'(모델인데.*|용량.*|규격.*|배송.*)', '', model_name).strip()
+        
+    if qty > 1:
+        return f"[{qty}] {model_name}"
+    else:
+        return model_name
+
 # --- [ 정제 및 텍스트 교정 함수 ] ---
 def remove_duplicate_words(addr_str):
     if not addr_str:
@@ -269,7 +319,7 @@ def master_juso_converter(keyword):
 st.set_page_config(page_title="자동 주소 변환기", page_icon="🚚", layout="centered")
 
 st.title("🚚 만능 주소 변환 & 엑셀 정제 웹 앱")
-st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 엑셀 서식을 자동으로 적용해 줍니다.")
+st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
@@ -279,9 +329,12 @@ if uploaded_file is not None:
     st.dataframe(df.head())
 
     if st.button("🚀 주소 변환 및 서식 적용 시작"):
-        with st.spinner("주소를 변환하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
+        with st.spinner("주소를 변환하고 상품명을 정리하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
             if '우편번호' in df.columns:
                 df['우편번호'] = df['우편번호'].apply(fix_zipcode)
+
+            if '선택정보' in df.columns:
+                df['선택정보'] = df['선택정보'].apply(clean_product_name)
 
             if '배송지' in df.columns:
                 progress_bar = st.progress(0)
@@ -319,7 +372,7 @@ if uploaded_file is not None:
 
             excel_data = output.getvalue()
 
-        st.success("🎉 변환이 완벽하게 완료되었습니다!")
+        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
         
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
