@@ -20,13 +20,44 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상 규칙 적용 + 택배배송 감지 시 맨 뒤 '택배' 표기) ] ---
+# --- [ 상품명 정제 함수 (케이스 및 케이블 상품 정제 규칙 적용) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
     s = str(val).strip()
     
-    # '케이스' 글자가 포함되어 있지 않으면 원본 그대로 유지
+    # 1. 케이블 상품 정제 규칙
+    if '케이블' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+                
+        has_g = 'ㄱ자' in s or 'ㄱ 자' in s
+        has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
+        m_match = re.search(r'(\d+(?:\.\d+)?m)', s, re.IGNORECASE)
+        length_str = m_match.group(1) if m_match else ""
+        
+        components = []
+        if has_g:
+            components.append('ㄱ자형')
+        if has_c_type:
+            components.append('C타입 케이블')
+        else:
+            components.append('케이블')
+        if length_str:
+            components.append(length_str)
+            
+        target = " ".join(components)
+        if qty > 1:
+            return f"{target}[{qty}]"
+        else:
+            return target
+
+    # 2. 케이스 상품 정제 규칙 ('케이스' 글자가 포함된 경우)
     if '케이스' not in s:
         return s
     
