@@ -20,49 +20,33 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 (맨 앞/슬래시 앞 내용 정리 및 모델명 추출) ] ---
+# --- [ 상품명 정제 함수 (맨 앞 긴 상품명 절삭 및 마지막 슬래시 뒤 옵션 추출) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return ""
     s = str(val).strip()
     
     qty = 1
-    model_name = ""
-    
     if '☞' in s:
         parts = s.split('☞')
-        base_part = parts[0].strip()
         after_part = parts[1].strip() if len(parts) > 1 else ""
-        
         qty_match = re.match(r'^(\d+)\s*(EA|개)?', after_part, re.IGNORECASE)
         if qty_match:
             qty = int(qty_match.group(1))
-            after_model = re.sub(r'^\d+\s*(EA|개)?\s*', '', after_part, flags=re.IGNORECASE).strip()
-        else:
-            after_model = after_part
             
-        noise_words = {'확인', '네', '..', '.', '오타', '동의', '배송', '바랍니다', '입니다', '네~', '잘부탁드립니다', '1개'}
-        is_noise = not after_model or after_model in noise_words or re.match(r'^[\d\-\.\s]+$', after_model) or len(after_model) < 2
-        
-        if not is_noise:
-            model_name = after_model
-        else:
-            # ☞ 뒤의 내용이 단순 메모나 노이즈인 경우, 앞쪽(base_part)의 마지막 슬래시(/ 또는 //) 뒤 내용 활용
-            sub_splits = re.split(r'[/]{1,2}', base_part)
-            if sub_splits:
-                candidate = sub_splits[-1].strip()
-                candidate = re.sub(r'\([^)]*\)', '', candidate).strip()
-                model_name = candidate
+    # ☞ 앞의 기본 텍스트에서 마지막 슬래시(/ 또는 //) 뒤의 핵심 옵션만 추출
+    base = s.split('☞')[0].strip() if '☞' in s else s
+    sub_parts = re.split(r'[/]{1,2}', base)
+    if len(sub_parts) > 1:
+        target = sub_parts[-1].strip()
+        target = re.sub(r'\([^)]*\)', '', target).strip() # 괄호 내용(우편함배송 등) 제거
     else:
-        model_name = s
-        
-    if model_name:
-        model_name = re.sub(r'(모델인데.*|용량.*|규격.*|배송.*)', '', model_name).strip()
+        target = base
         
     if qty > 1:
-        return f"[{qty}] {model_name}"
+        return f"[{qty}] {target}"
     else:
-        return model_name
+        return target
 
 # --- [ 정제 및 텍스트 교정 함수 ] ---
 def remove_duplicate_words(addr_str):
@@ -121,7 +105,7 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
     
     # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
-    kw_str = re.sub(r'동(\d)', r'동 \1', addr_str := kw_str) # Fixed inline assignment safety
+    kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
 
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
     kw_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', kw_str)
