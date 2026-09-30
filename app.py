@@ -20,11 +20,15 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 (케이스 및 케이블 상품 정제 규칙 적용) ] ---
+# --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
     s = str(val).strip()
+    
+    # 0. 태블릿/송풍구 거치대 상품 처리
+    if '송풍구' in s or '거치대' in s or '태블릿' in s:
+        return "태블릿 송풍구 거치대"
     
     # 1. 케이블 상품 정제 규칙
     if '케이블' in s:
@@ -88,7 +92,13 @@ def clean_product_name(val):
     # 괄호 내용(우편함배송 등) 제거
     target = re.sub(r'\([^)]*\)', '', target).strip()
     
-    # 요청하신 '케이스', '풀액정', '2장' 및 기존 제거 단어들 삭제
+    # 특정 모델명 간소화 규칙 적용
+    if 'S10플러스' in target or '975' in target:
+        target = 'S10플러스'
+    elif '와이드6' in target and 'A13' in target:
+        target = 'A13'
+    
+    # 요청하신 단어들 삭제 ('케이스', '풀액정', '2장', '클리어', '투명', '갤럭시')
     target = re.sub(r'케이스', '', target)
     target = re.sub(r'풀액정', '', target)
     target = re.sub(r'2장', '', target)
