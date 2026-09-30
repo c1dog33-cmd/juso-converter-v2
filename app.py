@@ -20,33 +20,23 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 (맨 앞 긴 상품명 절삭 및 마지막 슬래시 뒤 옵션 추출) ] ---
+# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상, 손가락 ☞ 기호와 뒤쪽 내용 유지) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
-        return ""
+        return val
     s = str(val).strip()
     
-    qty = 1
+    # '케이스' 글자가 포함되어 있지 않으면 원본 그대로 유지
+    if '케이스' not in s:
+        return s
+    
+    # 손가락 기호(☞)가 있는 경우 손가락과 그 뒤의 내용(수량 및 메모/모델명)을 그대로 유지
     if '☞' in s:
         parts = s.split('☞')
-        after_part = parts[1].strip() if len(parts) > 1 else ""
-        qty_match = re.match(r'^(\d+)\s*(EA|개)?', after_part, re.IGNORECASE)
-        if qty_match:
-            qty = int(qty_match.group(1))
-            
-    # ☞ 앞의 기본 텍스트에서 마지막 슬래시(/ 또는 //) 뒤의 핵심 옵션만 추출
-    base = s.split('☞')[0].strip() if '☞' in s else s
-    sub_parts = re.split(r'[/]{1,2}', base)
-    if len(sub_parts) > 1:
-        target = sub_parts[-1].strip()
-        target = re.sub(r'\([^)]*\)', '', target).strip() # 괄호 내용(우편함배송 등) 제거
-    else:
-        target = base
+        after_finger = parts[1].strip() if len(parts) > 1 else ""
+        return f"☞{after_finger}"
         
-    if qty > 1:
-        return f"[{qty}] {target}"
-    else:
-        return target
+    return s
 
 # --- [ 정제 및 텍스트 교정 함수 ] ---
 def remove_duplicate_words(addr_str):
