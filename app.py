@@ -95,7 +95,7 @@ def master_juso_converter(keyword):
             kw_str = re.sub(r'인천광역시\s+서구', '인천광역시 검단구', kw_str)
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
-    # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명 등) 추출 및 원본에서 분리 (상호명이 잘리지 않도록 뒷자리 강제 절삭 패턴 원천 제거)
+    # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명 등) 추출 및 원본에서 분리
     extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가A-Za-z]\s*동\s*\d+호?|\b[가A-Za-z]\s*동\d+|\b[가A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
     extra_details = re.findall(extra_pattern, kw_str)
     
@@ -123,7 +123,7 @@ def master_juso_converter(keyword):
         extra = search_q_str.replace('광주광역시', '').replace('전남광주통합특별시', '').replace('남구', '').replace('월산동', '').replace('986-3', '').replace('986', '').strip()
         return remove_duplicate_words(f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip())
 
-    # 4. 스마트 토큰 분리
+    # 4. 스마트 토큰 분리 (읍, 면 단위를 주소 구역으로 올바르게 인식하도록 추가)
     base_tokens = search_q_str.split()
     sido_sigungu_dong_tokens = []
     jibeon_token = ""
@@ -132,7 +132,7 @@ def master_juso_converter(keyword):
     for t in base_tokens:
         if re.match(r'^\d+(-\d+)?$', t) or re.match(r'^산\d+(-\d+)?$', t):
             jibeon_token = t
-        elif any(t.endswith(s) for s in ['도', '시', '구', '군', '동', '리', '가', '로', '길']) and t != '시':
+        elif any(t.endswith(s) for s in ['도', '시', '구', '군', '읍', '면', '동', '리', '가', '로', '길']) and t != '시':
             if not jibeon_token:
                 sido_sigungu_dong_tokens.append(t)
             else:
