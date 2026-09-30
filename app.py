@@ -97,6 +97,10 @@ def clean_product_name(val):
         target = 'S10플러스'
     elif '와이드6' in target and 'A13' in target:
         target = 'A13'
+    elif 'S10' in target and '5G' in target:
+        target = 'S10 5G'
+    elif 'S10' in target and ('973' in target or '기본' in target):
+        target = 'S10'
     
     # 요청하신 단어들 삭제 ('케이스', '풀액정', '2장', '클리어', '투명', '갤럭시')
     target = re.sub(r'케이스', '', target)
