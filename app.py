@@ -20,7 +20,7 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 ] ---
+# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상 규칙 적용) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -41,28 +41,32 @@ def clean_product_name(val):
     else:
         base = s
         
-    # '모델선택:'이 포함된 경우 기준점으로 삼고 앞부분 삭제
+    # '모델선택:'이 포함된 경우 기준 단어 포함하여 앞부분 모두 삭제
     if '모델선택:' in base:
-        idx = base.find('모델선택:')
-        target = base[idx + len('모델선택:'):].strip()
+        parts = base.split('모델선택:')
+        target = parts[-1].strip()
         if '/' in target:
             target = target.split('/')[0].strip()
-    elif '/' in base:
-        sub_parts = re.split(r'[/]{1,2}', base)
-        target = sub_parts[-1].strip()
+        if ',' in target:
+            target = target.split(',')[0].strip()
     else:
-        target = base
+        # 마지막 슬래시(/ 또는 //) 앞의 상품명은 전부 지우고 뒤쪽 내용만 추출
+        sub_parts = re.split(r'[/]{1,2}', base)
+        target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
         
     # 괄호 내용(우편함배송 등) 제거
     target = re.sub(r'\([^)]*\)', '', target).strip()
     
-    # '클리어', '투명', '갤럭시' 글자 삭제
+    # 요청하신 '케이스', '풀액정', '2장' 및 기존 제거 단어들 삭제
+    target = re.sub(r'케이스', '', target)
+    target = re.sub(r'풀액정', '', target)
+    target = re.sub(r'2장', '', target)
     target = re.sub(r'클리어', '', target)
     target = re.sub(r'투명', '', target)
     target = re.sub(r'갤럭시', '', target)
     target = ' '.join(target.split())
     
-    # 수량 2개 이상일 때 모델명 뒤에 [수량] 표기
+    # 수량이 2개 이상일 때 모델명 뒤에 [수량] 표기 (예: 노트20[2])
     if qty > 1:
         return f"{target}[{qty}]"
     else:
