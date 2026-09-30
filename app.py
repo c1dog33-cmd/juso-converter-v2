@@ -20,7 +20,7 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상: 마지막 슬래시 앞 내용 전부 삭제) ] ---
+# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상 규칙 적용) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -45,8 +45,11 @@ def clean_product_name(val):
     sub_parts = re.split(r'[/]{1,2}', base)
     target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
     
+    # 괄호 내용(우편함배송 등) 제거
+    target = re.sub(r'\([^)]*\)', '', target).strip()
+    
     if qty > 1:
-        return f"[{qty}] {target}"
+        return f"{target}[{qty}]"
     else:
         return target
 
