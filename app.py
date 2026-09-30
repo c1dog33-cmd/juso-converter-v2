@@ -34,6 +34,11 @@ def remove_duplicate_words(addr_str):
     # 슬래시 및 하이픈 동/호수 교정
     addr_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', addr_str)
     addr_str = re.sub(r'\b(\d{1,4})\s*-\s*(\d{3,4})호?\b', r'\1동 \2호', addr_str)
+    
+    # 동/호 띄어쓰기 교정 (예: 111 동 1404 -> 111동 1404, 111 동 -> 111동)
+    addr_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', addr_str)
+    addr_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', addr_str)
+    addr_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', addr_str)
 
     words = addr_str.split()
     clean_words = []
@@ -51,11 +56,16 @@ def master_juso_converter(keyword):
         
     kw_str = str(keyword).strip()
     
-    # 0. 행정구역 및 슬래시/하이픈 사전 전처리
+    # 0. 행정구역 및 슬래시/하이픈, 동/호수 띄어쓰기 사전 전처리
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
     kw_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', kw_str)
     kw_str = re.sub(r'\b(\d{1,4})\s*-\s*(\d{3,4})호?\b', r'\1동 \2호', kw_str)
+    
+    # 동/호 띄어쓰기 교정 (예: 111 동 1404 -> 111동 1404, 111 동 -> 111동)
+    kw_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', kw_str)
+    kw_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', kw_str)
+    kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
     
     # [규칙 1] 특정 예외 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
