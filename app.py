@@ -39,6 +39,9 @@ def remove_duplicate_words(addr_str):
     addr_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', addr_str)
+    
+    # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
+    addr_str = re.sub(r'동(\d)', r'동 \1', addr_str)
 
     words = addr_str.split()
     clean_words = []
@@ -66,6 +69,9 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', kw_str)
     kw_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', kw_str)
     kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
+    
+    # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
+    kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
     
     # [규칙 1] 특정 예외 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
