@@ -20,7 +20,7 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 ] ---
+# --- [ 상품명 정제 함수 (맨 앞/슬래시 앞 내용 정리 및 모델명 추출) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return ""
@@ -47,18 +47,12 @@ def clean_product_name(val):
         if not is_noise:
             model_name = after_model
         else:
-            if '//' in base_part:
-                sub_parts = base_part.split('//')
-                candidate = sub_parts[-1].split('(')[0].strip()
-                if candidate:
-                    model_name = candidate
-            elif '/' in base_part:
-                sub_parts = base_part.split('/')
-                candidate = sub_parts[-1].split('(')[0].strip()
-                if candidate:
-                    model_name = candidate
-            else:
-                model_name = base_part
+            # ☞ 뒤의 내용이 단순 메모나 노이즈인 경우, 앞쪽(base_part)의 마지막 슬래시(/ 또는 //) 뒤 내용 활용
+            sub_splits = re.split(r'[/]{1,2}', base_part)
+            if sub_splits:
+                candidate = sub_splits[-1].strip()
+                candidate = re.sub(r'\([^)]*\)', '', candidate).strip()
+                model_name = candidate
     else:
         model_name = s
         
@@ -127,7 +121,7 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
     
     # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
-    kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
+    kw_str = re.sub(r'동(\d)', r'동 \1', addr_str := kw_str) # Fixed inline assignment safety
 
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
     kw_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', kw_str)
