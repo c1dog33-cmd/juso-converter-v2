@@ -20,7 +20,7 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
-# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상 규칙 적용) ] ---
+# --- [ 상품명 정제 함수 ('케이스' 포함 상품 대상: 마지막 슬래시 앞 내용 전부 삭제) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -31,7 +31,6 @@ def clean_product_name(val):
         return s
     
     qty = 1
-    after_text = ""
     if '☞' in s:
         parts = s.split('☞')
         base = parts[0].strip()
@@ -39,27 +38,12 @@ def clean_product_name(val):
         qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
         if qty_match:
             qty = int(qty_match.group(1))
-            after_text = re.sub(r'^\d+\s*(EA|개)?\s*', '', after, flags=re.IGNORECASE).strip()
-        else:
-            after_text = after
     else:
         base = s
-        after_text = ""
         
+    # 마지막 슬래시(/ 또는 //) 앞의 상품명은 전부 지우고 뒤쪽 내용만 추출
     sub_parts = re.split(r'[/]{1,2}', base)
-    slash_target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
-    
-    noise_words = {'확인', '네', '..', '.', '오타', '동의', '배송', '바랍니다', '입니다', '네~', '잘부탁드립니다', '1개'}
-    is_after_noise = not after_text or after_text in noise_words or re.match(r'^[\d\-\.\s]+$', after_text) or len(after_text) < 2
-    
-    target = after_text if not is_after_noise else slash_target
-    
-    target = re.sub(r'(모델인데.*|용량.*|규격.*|배송.*)', '', target).strip()
-    target = re.sub(r'투명', '', target)
-    target = re.sub(r'케이스', '', target)
-    target = re.sub(r'\([^)]*(?:우편|배송|보관|일반)[^)]*\)', '', target)
-    target = re.sub(r'\([^)]*\)', '', target)
-    target = ' '.join(target.split())
+    target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
     
     if qty > 1:
         return f"[{qty}] {target}"
