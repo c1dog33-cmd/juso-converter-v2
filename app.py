@@ -191,16 +191,8 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
     
-    # [최신 행정구역 개편 1] 충북 음성군 대소면 -> 대소읍 자동 변환
+    # [행정구역 개편 대응] 충북 음성군 대소면 -> 대소읍 자동 변환
     kw_str = kw_str.replace('대소면', '대소읍')
-
-    # [최신 행정구역 개편 2] 인천 중구 영종지역(운서동, 중산동 등) 여부 미리 판별
-    is_yeongjong = False
-    yeongjong_dongs = ['운서동', '중산동', '영종동', '운북동', '용유동']
-    for d in yeongjong_dongs:
-        if d in kw_str and ('중구' in kw_str or '인천' in kw_str):
-            is_yeongjong = True
-            break
 
     # [규칙 1] 특정 예외 주소 강제 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
@@ -209,10 +201,7 @@ def master_juso_converter(keyword):
             for part in target_key.split():
                 extra_part = extra_part.replace(part, '')
             extra_part = re.sub(r'인천광역시|검단구|서구|불로동', '', extra_part).strip()
-            final_res = f"{override_addr} {extra_part}"
-            if is_yeongjong:
-                final_res = final_res.replace('중구', '영종구')
-            return remove_duplicate_words(final_res)
+            return remove_duplicate_words(f"{override_addr} {extra_part}")
 
     # [규칙 2] 인천 서구 불로동 -> 검단구 불로동 강제 매핑
     if '불로동' in kw_str:
@@ -247,10 +236,7 @@ def master_juso_converter(keyword):
     # 3. 특수 예외 처리 (월산동 등)
     if '월산동 986-3' in search_q_str or '월산동 986' in search_q_str:
         extra = search_q_str.replace('광주광역시', '').replace('전남광주통합특별시', '').replace('남구', '').replace('월산동', '').replace('986-3', '').replace('986', '').strip()
-        final_res = f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip()
-        if is_yeongjong:
-            final_res = final_res.replace('중구', '영종구')
-        return remove_duplicate_words(final_res)
+        return remove_duplicate_words(f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip())
 
     # 4. 스마트 토큰 분리
     base_tokens = search_q_str.split()
@@ -294,6 +280,7 @@ def master_juso_converter(keyword):
     base_road_addr = ""
     api_bd_nm = ""
     is_user_sangga = '상가' in kw_str
+    has_2cha = '2차' in kw_str or '2단지' in kw_str
     
     for q in query_candidates:
         if not q.strip():
@@ -309,13 +296,22 @@ def master_juso_converter(keyword):
                 if juso_list:
                     selected_juso = None
                     
-                    for juso in juso_list:
-                        bd_name = juso.get('bdNm', '').strip()
-                        if not is_user_sangga and '상가' in bd_name:
-                            continue
-                        if bd_name and building_name_candidate and (bd_name in building_name_candidate or building_name_candidate in bd_name):
-                            selected_juso = juso
-                            break
+                    # [2차 / 2단지 우선 매칭 규칙 적용]
+                    if has_2cha:
+                        for juso in juso_list:
+                            bd_name = juso.get('bdNm', '').strip()
+                            if '2차' in bd_name or '2단지' in bd_name:
+                                selected_juso = juso
+                                break
+
+                    if not selected_juso:
+                        for juso in juso_list:
+                            bd_name = juso.get('bdNm', '').strip()
+                            if not is_user_sangga and '상가' in bd_name:
+                                continue
+                            if bd_name and building_name_candidate and (bd_name in building_name_candidate or building_name_candidate in bd_name):
+                                selected_juso = juso
+                                break
 
                     if not selected_juso and not is_user_sangga:
                         for juso in juso_list:
@@ -335,10 +331,7 @@ def master_juso_converter(keyword):
             continue
 
     if not base_road_addr:
-        final_res = kw_str
-        if is_yeongjong:
-            final_res = final_res.replace('중구', '영종구')
-        return remove_duplicate_words(final_res)
+        return remove_duplicate_words(kw_str)
 
     # 6. API 결과 건물명 결합
     api_bd = api_bd_nm.strip() if api_bd_nm else ""
@@ -395,10 +388,6 @@ def master_juso_converter(keyword):
                     building_parts.append(p)
             sorted_details = building_parts + unit_parts
             full_result = f"{base_road_addr} {' '.join(sorted_details)}"
-
-    # [최신 행정구역 개편 2] 영종지역 동이 포함된 경우 최종 결과에서 무조건 '중구'를 '영종구'로 치환
-    if is_yeongjong:
-        full_result = full_result.replace('중구', '영종구')
 
     return remove_duplicate_words(full_result)
 
