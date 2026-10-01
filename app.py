@@ -208,15 +208,18 @@ def master_juso_converter(keyword):
         
     kw_str = str(keyword).strip()
     
+    # 0-0-1. 동/호수 띄어쓰기 및 하이픈 안전 전처리 (예: 111 동 -> 111동, 40-1617호 -> 40동 1617호)
+    kw_str = re.sub(r'(\d+)\s+동\b', r'\1동', kw_str)
+    kw_str = re.sub(r'(\d+)\s+호\b', r'\1호', kw_str)
+    kw_str = re.sub(r'(\d+)\s+층\b', r'\1층', kw_str)
+    kw_str = re.sub(r'\b(\d+)-(\d+)호\b', r'\1동 \2호', kw_str)
+    
     # 0-0. 배송 메시지(문 앞 부탁 등) 사전 분리 추출
     delivery_note_pattern = r'([가-힣\s]+(?:부탁드립니다?|놓아주세요?|전해주세요?|맡겨주세요?|보관해주세요?|부탁해요?))'
     delivery_notes = re.findall(delivery_note_pattern, kw_str)
     for note in delivery_notes:
         kw_str = kw_str.replace(note, '').strip()
     kw_str = re.sub(r'\s*\.\s*', ' ', kw_str).strip()
-    
-    # 0. 하이픈 형식의 동/호수 안전 전처리 (예: 40-1617호 -> 40동 1617호)
-    kw_str = re.sub(r'\b(\d+)-(\d+)호\b', r'\1동 \2호', kw_str)
     
     # 0-1. 행정구역 띄어쓰기 사전 전처리
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
@@ -259,7 +262,7 @@ def master_juso_converter(keyword):
             kw_str = re.sub(r'인천광역시\s+서구', '인천광역시 검단구', kw_str)
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
-    # 1. 상세 부가정보(건물 동, 호수, 괄호 내용 등) 추출 및 원본에서 분리 (법정동 보호)
+    # 1. 상세 부가정보(건물 동, 호수, 층수, 괄호 내용 등) 추출 및 원본에서 분리 (법정동 보호)
     extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
     extra_details = re.findall(extra_pattern, kw_str)
     
@@ -402,7 +405,7 @@ def master_juso_converter(keyword):
         if user_bd not in extra_details:
             extra_details.append(user_bd)
 
-    # --- [ 아파트 이름 중복 제거 필터 적용 ] ---
+    # --- [ 상호명 손실 방지 스마트 중복 필터 적용 ] ---
     def simplify_addr(text):
         if not text: return ""
         s = re.sub(r'[\s(),.]', '', text)
@@ -414,26 +417,29 @@ def master_juso_converter(keyword):
     needed_details = []
     
     for p in extra_details:
-        p_clean = re.sub(r'[\s(),.]', '', p)
-        p_simp = simplify_addr(p)
+        p_clean = p.strip()
+        if not p_clean: continue
         
-        is_dup_apartment = False
-        if p_simp and (p_simp in base_simp or base_simp in p_simp):
-            is_dup_apartment = True
-        else:
-            for word in p.split():
-                w_simp = simplify_addr(word)
-                if len(w_simp) >= 2 and w_simp in base_simp:
-                    is_dup_apartment = True
-                    break
-
-        if is_dup_apartment:
+        if p_clean.startswith('(') and p_clean.endswith(')'):
+            inner = p_clean[1:-1]
+            if simplify_addr(inner) in base_simp:
+                continue
+                
+        p_simp = simplify_addr(p_clean)
+        if p_simp in base_simp:
             continue
+            
+        words = p_clean.split()
+        unique_words = []
+        for w in words:
+            w_simp = simplify_addr(w)
+            if w_simp and w_simp not in base_simp:
+                unique_words.append(w)
+                
+        if unique_words:
+            needed_details.append(" ".join(unique_words))
 
-        if p not in base_road_addr:
-            needed_details.append(p)
-
-    # 8. [건물명 ➔ 동 ➔ 호수] 순서 정렬 및 숫자형 호수 자동 보정
+    # 8. [건물명 ➔ 동 ➔ 층/호수] 순서 정렬 및 숫자형 호수 자동 보정
     building_names = []
     dongs = []
     hos = []
