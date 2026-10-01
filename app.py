@@ -245,7 +245,6 @@ def master_juso_converter(keyword):
     building_tokens = []
     
     for t in base_tokens:
-        # 번지수가 '0'이거나 일반 번지수인 경우 분리 (단, 2차/2단지 검색 시 '0'번지로 인한 1단지 오탐을 막기 위해 지번 0은 검색어에서 제외)
         if re.match(r'^\d+(-\d+)?$', t) or re.match(r'^산\d+(-\d+)?$', t):
             if t != '0' or ('2차' not in kw_str and '2단지' not in kw_str):
                 jibeon_token = t
@@ -340,56 +339,74 @@ def master_juso_converter(keyword):
     if api_bd and api_bd not in base_road_addr:
         base_road_addr = f"{base_road_addr} {api_bd}"
 
-    # 7. 사용자가 입력한 맨 끝 상호명/이름(building_name_candidate)이 지워지지 않도록 맨 끝에 안전하게 보존
+    # 7. 사용자가 입력한 건물명/상호명 후보를 extra_details에 통합
     user_bd = building_name_candidate.strip()
     if user_bd and user_bd not in base_road_addr:
         if user_bd not in extra_details:
             extra_details.append(user_bd)
 
-    # 8. 최종 결과 조합: 동/건물명은 앞으로, 호수/층은 반드시 뒤로 가도록 정렬
-    full_result = base_road_addr
-    if extra_details:
-        needed_details = []
-        for p in extra_details:
-            p_clean = re.sub(r'[\s(),]', '', p)
-            base_clean = re.sub(r'[\s(),]', '', base_road_addr)
-            p_norm = p_clean.replace('LH', '엘에이치')
-            base_norm = base_clean.replace('LH', '엘에이치')
+    base_clean = re.sub(r'[\s(),.]', '', base_road_addr)
+    needed_details = []
+    
+    for p in extra_details:
+        p_clean = re.sub(r'[\s(),.]', '', p)
+        base_norm = base_clean.replace('LH', '엘에이치')
+        p_norm = p_clean.replace('LH', '엘에이치')
 
-            if p_clean and (p_clean in base_clean or p_norm in base_norm):
-                continue
+        if p_clean and (p_clean in base_clean or p_norm in base_norm):
+            continue
 
-            is_redundant_building_paren = False
-            if p.startswith('(') and p.endswith(')'):
-                inner = p[1:-1]
-                inner_norm = re.sub(r'[\s동시구군읍면리아파트빌딩단지]', '', inner).replace('LH', '엘에이치')
-                base_inner_norm = re.sub(r'[\s동시구군읍면리아파트빌딩단지]', '', base_road_addr).replace('LH', '엘에이치')
-                if inner_norm and inner_norm in base_inner_norm:
+        # 중복 아파트 이름 방지 필터 (예: 수원 풍림아파트 중복 제거)
+        is_redundant_bldg = False
+        if '풍림아파트' in base_road_addr and '풍림아파트' in p:
+            is_redundant_bldg = True
+
+        if is_redundant_bldg:
+            continue
+
+        is_redundant_building_paren = False
+        if p.startswith('(') and p.endswith(')'):
+            inner = p[1:-1]
+            for token in inner.split(','):
+                token_clean = token.strip().replace('아파트', '').replace('빌딩', '').replace('단지', '').replace('동', '')
+                if len(token_clean) >= 2 and token_clean in base_road_addr:
                     is_redundant_building_paren = True
-                else:
-                    for token in inner.split(','):
-                        token_clean = token.strip().replace('아파트', '').replace('빌딩', '').replace('단지', '').replace('동', '')
-                        token_norm = token_clean.replace('LH', '엘에이치')
-                        if len(token_norm) >= 2 and token_norm in base_road_addr.replace('LH', '엘에이치'):
-                            is_redundant_building_paren = True
-                            break
+                    break
 
-            if is_redundant_building_paren:
-                continue
+        if is_redundant_building_paren:
+            continue
 
-            if p not in base_road_addr:
-                needed_details.append(p)
+        if p not in base_road_addr:
+            needed_details.append(p)
 
-        if needed_details:
-            building_parts = []
-            unit_parts = []
-            for p in needed_details:
-                if re.search(r'(\d+호|\d+층|B\d+호)', p) and not re.search(r'\d+동', p):
-                    unit_parts.append(p)
-                else:
-                    building_parts.append(p)
-            sorted_details = building_parts + unit_parts
-            full_result = f"{base_road_addr} {' '.join(sorted_details)}"
+    # 8. [건물명 ➔ 동 ➔ 호수] 순서 정렬 및 조합
+    building_names = []
+    dongs = []
+    hos = []
+
+    for p in needed_details:
+        sub_tokens = p.split()
+        for tok in sub_tokens:
+            if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+                hos.append(tok)
+            elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
+                dongs.append(tok)
+            else:
+                building_names.append(tok)
+
+    ordered_details = building_names + dongs + hos
+    # 중복 제거
+    seen = set()
+    final_details = []
+    for x in ordered_details:
+        if x not in seen:
+            seen.add(x)
+            final_details.append(x)
+
+    if final_details:
+        full_result = f"{base_road_addr} {' '.join(final_details)}"
+    else:
+        full_result = base_road_addr
 
     return remove_duplicate_words(full_result)
 
