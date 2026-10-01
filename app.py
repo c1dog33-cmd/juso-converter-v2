@@ -154,11 +154,10 @@ def remove_duplicate_words(addr_str):
     addr_str = re.sub(r'간\s+석동', '간석동', addr_str)
     addr_str = re.sub(r'가\s+능동', '가능동', addr_str)
 
-    # 슬래시 및 하이픈 동/호수 교정
+    # 슬래시 및 하이픈 동/호수 교정 (단, 주소 앞부분의 지번 영역은 건드리지 않도록 안전하게 처리)
     addr_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', addr_str)
-    addr_str = re.sub(r'\b(\d{1,4})\s*-\s*(\d{3,4})호?\b', r'\1동 \2호', addr_str)
     
-    # 동/호 띄어쓰기 교정 (예: 111 동 1404 -> 111동 1404, 111 동 -> 111동)
+    # 동/호 띄어쓰기 교정
     addr_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', addr_str)
@@ -188,25 +187,9 @@ def master_juso_converter(keyword):
         
     kw_str = str(keyword).strip()
     
-    # 0. 행정구역 및 슬래시/하이픈, 동/호수 띄어쓰기 사전 전처리
+    # 0. 행정구역 띄어쓰기 사전 전처리 (지번 하이픈을 망가뜨리던 위험한 전처리는 완전히 제거함)
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
-    kw_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', kw_str)
-    kw_str = re.sub(r'\b(\d{1,4})\s*-\s*(\d{3,4})호?\b', r'\1동 \2호', kw_str)
-    
-    # 동/호 띄어쓰기 교정 (예: 111 동 1404 -> 111동 1404, 111 동 -> 111동)
-    kw_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', kw_str)
-    kw_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', kw_str)
-    kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
-    
-    # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
-    kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
-
-    # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
-    kw_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', kw_str)
-
-    # 가동, 나동, 라동 등 한글 동 이름 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가 (예: 라동 204 -> 라동 204호)
-    kw_str = re.sub(r'\b([가-힣A-Za-z]+동)\s*(\d+)(?!호)\b', r'\1 \2호', kw_str)
     
     # [규칙 1] 특정 예외 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
@@ -232,13 +215,14 @@ def master_juso_converter(keyword):
     search_q_str = re.sub(extra_pattern, '', kw_str)
     search_q_str = ' '.join(search_q_str.split())
 
-    # 2. 건물명 뒤 '103-401' 형태를 '103동 104호'로 자동 변환
+    # 2. 건물명 뒤에 있는 하이픈 형태(예: '103-401')를 '103동 104호'로 안전하게 변환
     tokens_init = search_q_str.split()
     processed_tokens = []
     for i, t in enumerate(tokens_init):
         if re.match(r'^\d+-\d+$', t):
             prev_token = tokens_init[i-1] if i > 0 else ""
-            if prev_token and not any(prev_token.endswith(s) for s in ['동', '리', '가', '로', '길']):
+            # 앞 토큰이 동, 리, 가, 로, 길 등이 아닐 때만 (지번 영역 보호)
+            if prev_token and not any(prev_token.endswith(s) for s in ['동', '리', '가', '로', '길', '시', '구', '군', '읍', '면']):
                 parts = t.split('-')
                 processed_tokens.append(f"{parts[0]}동 {parts[1]}호")
             else:
@@ -272,7 +256,7 @@ def master_juso_converter(keyword):
     sido_sigungu_dong = " ".join(sido_sigungu_dong_tokens)
     building_name_candidate = " ".join(building_tokens)
     
-    # 5. 다단계 검색 후보군 생성 (지번 주소 검색을 최우선으로 배치하여 잘못된 건물명 매칭 방지)
+    # 5. 다단계 검색 후보군 생성 (지번 주소 검색을 최우선으로 배치)
     query_candidates = []
     
     if sido_sigungu_dong and jibeon_token:
@@ -401,7 +385,7 @@ def master_juso_converter(keyword):
 # --- [ Streamlit 웹 UI ] ---
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
-st.title("🛍️️ 스마트샵 주소 변환 & 엑셀 수정")
+st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정")
 st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
