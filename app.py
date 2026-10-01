@@ -191,7 +191,17 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
     
-    # [규칙 1] 특정 예외 매핑 체크 (예: 불로동 268-2)
+    # [최신 행정구역 개편 자동 매핑 적용]
+    # 1) 충북 음성군 대소면 -> 대소읍 자동 변환
+    kw_str = kw_str.replace('대소면', '대소읍')
+    
+    # 2) 인천 중구 영종지역(운서동, 중산동, 영종동, 운북동, 용유동) -> 영종구 자동 변환
+    yeongjong_dongs = ['운서동', '중산동', '영종동', '운북동', '용유동']
+    for d in yeongjong_dongs:
+        if d in kw_str and ('중구' in kw_str or '인천' in kw_str):
+            kw_str = kw_str.replace('중구', '영종구')
+
+    # [규칙 1] 특정 예외 주소 강제 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
             extra_part = kw_str
