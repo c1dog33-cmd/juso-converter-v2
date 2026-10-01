@@ -333,7 +333,7 @@ def master_juso_converter(keyword):
         if user_bd not in extra_details:
             extra_details.append(user_bd)
 
-    # 8. 최종 결과 조합: 도로명 주소 맨 뒤에 중복되지 않는 상세 부가정보 및 상호명 배치
+    # 8. 최종 결과 조합: 건물명/상호명을 호수보다 앞서 배치되도록 정렬 후 결합
     full_result = base_road_addr
     if extra_details:
         needed_details = []
@@ -369,7 +369,16 @@ def master_juso_converter(keyword):
                 needed_details.append(p)
 
         if needed_details:
-            full_result = f"{base_road_addr} {' '.join(needed_details)}"
+            # 건물/상호명은 앞으로, 동/호수/층은 뒤로 가도록 자동 정렬 (예: 리보휴먼빌 203호)
+            building_parts = []
+            unit_parts = []
+            for p in needed_details:
+                if re.search(r'(\d+동|\d+호|\d+층|B\d+호)', p):
+                    unit_parts.append(p)
+                else:
+                    building_parts.append(p)
+            sorted_details = building_parts + unit_parts
+            full_result = f"{base_road_addr} {' '.join(sorted_details)}"
 
     return remove_duplicate_words(full_result)
 
