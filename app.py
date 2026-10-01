@@ -50,7 +50,7 @@ def clean_product_name(val):
     if '송풍구' in s or '거치대' in s or '태블릿' in s:
         return "태블릿 송풍구 거치대"
     
-    # 1. 케이블 상품 정제 규칙
+    # 1. 케이블 상품 정제 규칙 (m 및 cm 단위 모두 인식하도록 개선)
     if '케이블' in s:
         qty = 1
         if '☞' in s:
@@ -62,7 +62,7 @@ def clean_product_name(val):
                 
         has_g = 'ㄱ자' in s or 'ㄱ 자' in s
         has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
-        m_match = re.search(r'(\d+(?:\.\d+)?m)', s, re.IGNORECASE)
+        m_match = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', s, re.IGNORECASE)
         length_str = m_match.group(1) if m_match else ""
         
         components = []
