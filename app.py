@@ -156,7 +156,8 @@ def remove_duplicate_words(addr_str):
     clean_words = []
     for w in words:
         clean_w = w.strip('(),')
-        if not clean_words || clean_w != clean_words[-1].strip('(),'):
+        # 파이썬 올바른 논리 연산자 'or' 사용
+        if not clean_words or clean_w != clean_words[-1].strip('(),'):
             clean_words.append(w)
             
     return ' '.join(clean_words)
@@ -219,7 +220,7 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
     
     # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
-    kw_str = re.sub(r'동(\d)', r'동 \1', addr_str := kw_str)
+    kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
 
     # 알파벳/단일 문자 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: A동 202 -> A동 202호)
     kw_str = re.sub(r'\b([가A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', kw_str)
@@ -369,7 +370,7 @@ def master_juso_converter(keyword):
     if target_bd and target_bd not in base_road_addr:
         base_road_addr = f"{base_road_addr} {target_bd}"
 
-    # 7. 최종 결과 조합 및 꼬리말 중복 반복 제거 적용
+    # 7. 최종 결과 조합 및 꼬리말 중복 제거 적용
     full_result = base_road_addr
     if extra_details:
         needed_details = []
