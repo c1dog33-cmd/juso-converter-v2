@@ -161,6 +161,38 @@ def remove_duplicate_words(addr_str):
             
     return ' '.join(clean_words)
 
+# --- [ 꼬리말 중복 반복 제거 함수 ] ---
+def comprehensive_address_cleanup(addr_str):
+    if not addr_str:
+        return addr_str
+        
+    words = addr_str.split()
+    n = len(words)
+    # 뒤쪽에 반복되는 단어 블록(구문) 탐지하여 잘라내기
+    for length in range(n // 2, 0, -1):
+        for i in range(n - length):
+            chunk = words[i:i+length]
+            for j in range(i + length, n - length + 1):
+                if words[j:j+length] == chunk:
+                    addr_str = " ".join(words[:j])
+                    words = addr_str.split()
+                    n = len(words)
+                    break
+            else:
+                continue
+            break
+
+    # 이미 앞쪽에 등장한 내용과 완전히 겹치는 괄호 블록 제거
+    paren_matches = re.findall(r'\(([^)]+)\)', addr_str)
+    for p_inner in paren_matches:
+        parts_before = addr_str.split(f"({p_inner})")[0]
+        p_clean = re.sub(r'\s+', '', p_inner)
+        before_clean = re.sub(r'\s+', '', parts_before)
+        if p_clean and p_clean in before_clean:
+            addr_str = addr_str.replace(f"({p_inner})", "")
+            
+    return re.sub(r'\s+', ' ', addr_str).strip()
+
 # --- [ 만능 주소 변환 엔진 ] ---
 def master_juso_converter(keyword):
     if not keyword or pd.isna(keyword):
@@ -330,7 +362,7 @@ def master_juso_converter(keyword):
     if target_bd and target_bd not in base_road_addr:
         base_road_addr = f"{base_road_addr} {target_bd}"
 
-    # 7. 최종 결과 조합: 도로명 주소 맨 뒤에 중복되는 아파트명/지역명을 걸러내고 필요한 동·호수 및 상호명만 깔끔하게 배치
+    # 7. 최종 결과 조합 및 꼬리말 중복 제거 적용
     full_result = base_road_addr
     if extra_details:
         needed_details = []
@@ -340,11 +372,9 @@ def master_juso_converter(keyword):
             p_str = p.strip()
             p_clean = re.sub(r'[\s(),]', '', p_str)
             
-            # 이미 도로명 주소(API 결과)에 포함된 내용이면 스킵
             if p_clean and p_clean in base_lower:
                 continue
                 
-            # 지역명/아파트명이 포함된 괄호 항목이 도로명 주소에 이미 존재하면 스킵
             if p_str.startswith('(') and p_str.endswith(')'):
                 inner = p_str[1:-1].strip()
                 all_in = True
@@ -355,9 +385,8 @@ def master_juso_converter(keyword):
                 if all_in:
                     continue
                     
-            # 아파트 이름이 도로명 주소에 이미 포함되어 있는 경우, 반복되는 아파트 이름은 빼고 동·호수만 추출
             dong_ho_match = re.search(r'(\d+동\s*\d+호?)', p_str)
-            if dong_ho_match and any(bd in base_road_addr for bd in ['캐슬골드파크', '아파트', '단지', '푸르지오', '이편한', '자이', '힐스테이트']):
+            if dong_ho_match and any(bd in base_road_addr for bd in ['캐슬골드파크', '우미린', '풀하우스', '아파트', '단지', '푸르지오', '이편한', '자이', '힐스테이트']):
                 needed_details.append(dong_ho_match.group(1))
                 continue
 
@@ -365,12 +394,14 @@ def master_juso_converter(keyword):
                 needed_details.append(p_str)
 
         if needed_details:
-            # 중복 제거
             unique_details = []
             for d in needed_details:
                 if d not in unique_details:
                     unique_details.append(d)
             full_result = f"{base_road_addr} {' '.join(unique_details)}"
+
+    # 꼬리말 중복 반복 문구 최종 차단
+    full_result = comprehensive_address_cleanup(full_result)
 
     return remove_duplicate_words(full_result)
 
