@@ -156,12 +156,12 @@ def remove_duplicate_words(addr_str):
     clean_words = []
     for w in words:
         clean_w = w.strip('(),')
-        if not clean_words or clean_w != clean_words[-1].strip('(),'):
+        if not clean_words || clean_w != clean_words[-1].strip('(),'):
             clean_words.append(w)
             
     return ' '.join(clean_words)
 
-# --- [ 꼬리말 중복 반복 제거 함수 ] ---
+# --- [ 완벽한 꼬리말 중복 반복 및 중복 괄호 제거 함수 ] ---
 def comprehensive_address_cleanup(addr_str):
     if not addr_str:
         return addr_str
@@ -182,7 +182,7 @@ def comprehensive_address_cleanup(addr_str):
                 continue
             break
 
-    # 이미 앞쪽에 등장한 내용과 완전히 겹치는 괄호 블록 제거
+    # 이미 앞쪽에 등장한 내용과 완전히 겹치는 괄호 블록 제거 (예: 중복된 (송촌빌딩) 등)
     paren_matches = re.findall(r'\(([^)]+)\)', addr_str)
     for p_inner in paren_matches:
         parts_before = addr_str.split(f"({p_inner})")[0]
@@ -191,7 +191,14 @@ def comprehensive_address_cleanup(addr_str):
         if p_clean and p_clean in before_clean:
             addr_str = addr_str.replace(f"({p_inner})", "")
             
-    return re.sub(r'\s+', ' ', addr_str).strip()
+    # 연속된 중복 단어 정리
+    words = addr_str.split()
+    cleaned_words = []
+    for w in words:
+        if not cleaned_words or w != cleaned_words[-1]:
+            cleaned_words.append(w)
+
+    return re.sub(r'\s+', ' ', " ".join(cleaned_words)).strip()
 
 # --- [ 만능 주소 변환 엔진 ] ---
 def master_juso_converter(keyword):
@@ -362,7 +369,7 @@ def master_juso_converter(keyword):
     if target_bd and target_bd not in base_road_addr:
         base_road_addr = f"{base_road_addr} {target_bd}"
 
-    # 7. 최종 결과 조합 및 꼬리말 중복 제거 적용
+    # 7. 최종 결과 조합 및 꼬리말 중복 반복 제거 적용
     full_result = base_road_addr
     if extra_details:
         needed_details = []
