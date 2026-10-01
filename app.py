@@ -183,7 +183,7 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
 
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
-    kw_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', kw_str)
+    kw_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', addr_str := kw_str)
 
     # 알파벳/단일 문자 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: A동 202 -> A동 202호)
     kw_str = re.sub(r'\b([가A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', kw_str)
@@ -204,10 +204,20 @@ def master_juso_converter(keyword):
             kw_str = re.sub(r'인천광역시\s+서구', '인천광역시 검단구', kw_str)
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
-    # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명 등) 추출 및 원본에서 분리
-    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가A-Za-z]\s*동\s*\d+호?|\b[가A-Za-z]\s*동\d+|\b[가A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
+    # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명, 상호명 등) 추출 및 원본에서 분리
+    # 번지수/건물명 뒤에 붙는 상호명이나 추가 텍스트를 보존하기 위해 패턴 확장
+    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가A-Za-z]\s*동\s*\d+호?|\b[가A-Za-z]\s*동\d+|\b[가A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터|의료기|상사|상회|스토어|샵|마트|사무실|공업사|대리점|학원|교습소))'
     extra_details = re.findall(extra_pattern, kw_str)
     
+    # 만약 정규식에 걸리지 않았으나 번지수(예: 28) 뒤에 남은 단어(예: 한일의료기)가 있는 경우 추가 추출
+    # 예: "신석길 28 한일의료기" 형태에서 번지수 뒤의 텍스트 감지
+    address_end_match = re.search(r'(?:로|길)\s+\d+(?:-\d+)?\s+(.+)$', kw_str)
+    if address_end_match:
+        trailing_text = address_end_match.group(1).strip()
+        if trailing_text and trailing_text not in extra_details:
+            # 이미 extra_details에 포함되지 않은 경우 추가
+            extra_details.append(trailing_text)
+
     # 검색용 쿼리 생성 시 상세 부가정보 일시 제거
     search_q_str = re.sub(extra_pattern, '', kw_str)
     search_q_str = ' '.join(search_q_str.split())
