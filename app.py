@@ -194,6 +194,14 @@ def master_juso_converter(keyword):
     # [최신 행정구역 개편 1] 충북 음성군 대소면 -> 대소읍 자동 변환
     kw_str = kw_str.replace('대소면', '대소읍')
 
+    # [최신 행정구역 개편 2] 인천 중구 영종지역(운서동, 중산동 등) 여부 미리 판별
+    is_yeongjong = False
+    yeongjong_dongs = ['운서동', '중산동', '영종동', '운북동', '용유동']
+    for d in yeongjong_dongs:
+        if d in kw_str and ('중구' in kw_str or '인천' in kw_str):
+            is_yeongjong = True
+            break
+
     # [규칙 1] 특정 예외 주소 강제 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
@@ -201,7 +209,10 @@ def master_juso_converter(keyword):
             for part in target_key.split():
                 extra_part = extra_part.replace(part, '')
             extra_part = re.sub(r'인천광역시|검단구|서구|불로동', '', extra_part).strip()
-            return remove_duplicate_words(f"{override_addr} {extra_part}")
+            final_res = f"{override_addr} {extra_part}"
+            if is_yeongjong:
+                final_res = final_res.replace('중구', '영종구')
+            return remove_duplicate_words(final_res)
 
     # [규칙 2] 인천 서구 불로동 -> 검단구 불로동 강제 매핑
     if '불로동' in kw_str:
@@ -218,7 +229,7 @@ def master_juso_converter(keyword):
     search_q_str = re.sub(extra_pattern, '', kw_str)
     search_q_str = ' '.join(search_q_str.split())
 
-    # 2. 건물명 뒤에 있는 하이픈 형태(예: '103-401')를 '103동 104호'로 안전하게 변환 (앞의 진짜 지번 '148-1'은 보호됨)
+    # 2. 건물명 뒤에 있는 하이픈 형태(예: '103-401')를 '103동 104호'로 안전하게 변환
     tokens_init = search_q_str.split()
     processed_tokens = []
     for i, t in enumerate(tokens_init):
@@ -236,7 +247,10 @@ def master_juso_converter(keyword):
     # 3. 특수 예외 처리 (월산동 등)
     if '월산동 986-3' in search_q_str or '월산동 986' in search_q_str:
         extra = search_q_str.replace('광주광역시', '').replace('전남광주통합특별시', '').replace('남구', '').replace('월산동', '').replace('986-3', '').replace('986', '').strip()
-        return remove_duplicate_words(f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip())
+        final_res = f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip()
+        if is_yeongjong:
+            final_res = final_res.replace('중구', '영종구')
+        return remove_duplicate_words(final_res)
 
     # 4. 스마트 토큰 분리
     base_tokens = search_q_str.split()
@@ -258,7 +272,7 @@ def master_juso_converter(keyword):
     sido_sigungu_dong = " ".join(sido_sigungu_dong_tokens)
     building_name_candidate = " ".join(building_tokens)
     
-    # 5. 다단계 검색 후보군 생성 (API는 '중구' 기준으로 조회해야 정상 검색됨)
+    # 5. 다단계 검색 후보군 생성
     query_candidates = []
     
     if sido_sigungu_dong and jibeon_token:
@@ -321,7 +335,10 @@ def master_juso_converter(keyword):
             continue
 
     if not base_road_addr:
-        return remove_duplicate_words(kw_str)
+        final_res = kw_str
+        if is_yeongjong:
+            final_res = final_res.replace('중구', '영종구')
+        return remove_duplicate_words(final_res)
 
     # 6. API 결과 건물명 결합
     api_bd = api_bd_nm.strip() if api_bd_nm else ""
@@ -379,12 +396,9 @@ def master_juso_converter(keyword):
             sorted_details = building_parts + unit_parts
             full_result = f"{base_road_addr} {' '.join(sorted_details)}"
 
-    # [최신 행정구역 개편 2] 최종 도로명 주소가 완성된 직후, 영종지역 동(운서동, 중산동 등)이 포함된 경우 '중구'를 '영종구'로 최종 치환
-    yeongjong_dongs = ['운서동', '중산동', '영종동', '운북동', '용유동']
-    for d in yeongjong_dongs:
-        if d in kw_str and '중구' in full_result:
-            full_result = full_result.replace('중구', '영종구')
-            break
+    # [최신 행정구역 개편 2] 영종지역 동이 포함된 경우 최종 결과에서 무조건 '중구'를 '영종구'로 치환
+    if is_yeongjong:
+        full_result = full_result.replace('중구', '영종구')
 
     return remove_duplicate_words(full_result)
 
