@@ -180,6 +180,7 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
     
     # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
+    kw_str = re.sub(r'동(\d)', r'동 \1', addr_str if 'addr_str' in locals() else '동\1') # safely handled below via regex
     kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
 
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
@@ -333,7 +334,7 @@ def master_juso_converter(keyword):
         if user_bd not in extra_details:
             extra_details.append(user_bd)
 
-    # 8. 최종 결과 조합: 건물명/상호명을 호수보다 앞서 배치되도록 정렬 후 결합
+    # 8. 최종 결과 조합: 동/건물명은 앞으로, 호수/층은 반드시 뒤로 가도록 정렬
     full_result = base_road_addr
     if extra_details:
         needed_details = []
@@ -369,11 +370,11 @@ def master_juso_converter(keyword):
                 needed_details.append(p)
 
         if needed_details:
-            # 건물/상호명은 앞으로, 동/호수/층은 뒤로 가도록 자동 정렬 (예: 리보휴먼빌 203호)
             building_parts = []
             unit_parts = []
             for p in needed_details:
-                if re.search(r'(\d+동|\d+호|\d+층|B\d+호)', p):
+                # '호'나 '층'이 포함되어 있으면서 '동'이 포함되어 있지 않은 경우만 호수(unit)로 분류
+                if re.search(r'(\d+호|\d+층|B\d+호)', p) and not re.search(r'\d+동', p):
                     unit_parts.append(p)
                 else:
                     building_parts.append(p)
