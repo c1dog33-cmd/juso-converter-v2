@@ -42,14 +42,34 @@ def clean_product_name(val):
             qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
             if qty_match:
                 qty = int(qty_match.group(1))
-        if qty > 1:
-            return f"렌즈보호커버[{qty}]"
-        else:
-            return "렌즈보호커버"
+        if qty > 1: return f"렌즈보호커버[{qty}]"
+        else: return "렌즈보호커버"
 
-    # 0-2. 태블릿/송풍구 거치대 상품 처리
-    if '송풍구' in s or '거치대' in s or '태블릿' in s:
-        return "태블릿 송풍구 거치대"
+    # 0-2. 태블릿 송풍구 거치대 상품 처리
+    if ('송풍구' in s or '차량용' in s) and ('거치대' in s or '태블릿' in s):
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        if qty > 1: return f"태블릿 송풍구 거치대[{qty}]"
+        else: return "태블릿 송풍구 거치대"
+
+    # 0-3. 태블릿 모니터 2단 거치대 처리 ('모니터'와 '2단' 두 단어가 모두 포함될 때만)
+    if '모니터' in s and '2단' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        if qty > 1:
+            return f"태블릿 모니터 2단 거치대[{qty}]"
+        else:
+            return "태블릿 모니터 2단 거치대"
     
     # 1. 케이블 상품 정제 규칙 (m 및 cm 단위 모두 인식)
     if '케이블' in s:
@@ -204,7 +224,6 @@ def master_juso_converter(keyword):
             extra_part = kw_str
             for part in target_key.split():
                 extra_part = extra_part.replace(part, '')
-            # 상세 동, 호수 정보 추출
             extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+호|\d+층)'
             found_details = re.findall(extra_pattern, extra_part)
             
@@ -490,6 +509,19 @@ if uploaded_file is not None:
                 df.to_excel(writer, index=False)
                 worksheet = writer.sheets['Sheet1']
                 
+                # --- [ 열 너비 자동 맞춤 기능 적용 ] ---
+                for col in worksheet.columns:
+                    max_len = 0
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    for cell in col:
+                        val = str(cell.value or '')
+                        length = sum(2 if ord(char) > 127 else 1 for char in val)
+                        if length > max_len:
+                            max_len = length
+                    # 배송지(D열 등)가 잘리지 않도록 넉넉하게 설정하되 최대 80 제한
+                    adjusted_width = max(max_len + 4, 12)
+                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
+
                 font_size_8 = Font(size=8)
                 for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
                     worksheet.row_dimensions[row[0].row].height = 18
