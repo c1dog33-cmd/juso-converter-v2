@@ -208,6 +208,13 @@ def master_juso_converter(keyword):
         
     kw_str = str(keyword).strip()
     
+    # 0-0. 배송 메시지(문 앞 부탁 등) 사전 분리 추출
+    delivery_note_pattern = r'([가-힣\s]+(?:부탁드립니다?|놓아주세요?|전해주세요?|맡겨주세요?|보관해주세요?|부탁해요?))'
+    delivery_notes = re.findall(delivery_note_pattern, kw_str)
+    for note in delivery_notes:
+        kw_str = kw_str.replace(note, '').strip()
+    kw_str = re.sub(r'\s*\.\s*', ' ', kw_str).strip()
+    
     # 0. 하이픈 형식의 동/호수 안전 전처리 (예: 40-1617호 -> 40동 1617호)
     kw_str = re.sub(r'\b(\d+)-(\d+)호\b', r'\1동 \2호', kw_str)
     
@@ -238,6 +245,11 @@ def master_juso_converter(keyword):
             
             ordered_details = building_names + dongs + hos
             final_res = f"{override_addr} {' '.join(ordered_details)}"
+            
+            if delivery_notes:
+                cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
+                final_res = f"{final_res} ({cleaned_notes})"
+                
             return remove_duplicate_words(final_res)
 
     # [규칙 2] 인천 서구 불로동 -> 검단구 불로동 강제 매핑
@@ -273,7 +285,11 @@ def master_juso_converter(keyword):
     # 3. 특수 예외 처리 (월산동 등)
     if '월산동 986-3' in search_q_str or '월산동 986' in search_q_str:
         extra = search_q_str.replace('광주광역시', '').replace('전남광주통합특별시', '').replace('남구', '').replace('월산동', '').replace('986-3', '').replace('986', '').strip()
-        return remove_duplicate_words(f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip())
+        res_str = f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip()
+        if delivery_notes:
+            cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
+            res_str = f"{res_str} ({cleaned_notes})"
+        return remove_duplicate_words(res_str)
 
     # 4. 스마트 토큰 분리
     base_tokens = search_q_str.split()
@@ -369,7 +385,11 @@ def master_juso_converter(keyword):
             continue
 
     if not base_road_addr:
-        return remove_duplicate_words(kw_str)
+        full_fallback = kw_str
+        if delivery_notes:
+            cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
+            full_fallback = f"{full_fallback} ({cleaned_notes})"
+        return remove_duplicate_words(full_fallback)
 
     # 6. API 결과 건물명 결합
     api_bd = api_bd_nm.strip() if api_bd_nm else ""
@@ -382,34 +402,32 @@ def master_juso_converter(keyword):
         if user_bd not in extra_details:
             extra_details.append(user_bd)
 
-    base_clean = re.sub(r'[\s(),.]', '', base_road_addr)
+    # --- [ 아파트 이름 중복 제거 필터 적용 ] ---
+    def simplify_addr(text):
+        if not text: return ""
+        s = re.sub(r'[\s(),.]', '', text)
+        for suf in ['아파트', '멘션', '빌라', '오피스텔', '주공', '단지', '타운']:
+            s = s.replace(suf, '')
+        return s
+
+    base_simp = simplify_addr(base_road_addr)
     needed_details = []
     
     for p in extra_details:
         p_clean = re.sub(r'[\s(),.]', '', p)
-        base_norm = base_clean.replace('LH', '엘에이치')
-        p_norm = p_clean.replace('LH', '엘에이치')
-
-        if p_clean and (p_clean in base_clean or p_norm in base_norm):
-            continue
-
-        is_redundant_bldg = False
-        if ('풍림아파트' in base_road_addr and '풍림아파트' in p) or ('남산타운' in base_road_addr and '남산타운' in p):
-            is_redundant_bldg = True
-
-        if is_redundant_bldg:
-            continue
-
-        is_redundant_building_paren = False
-        if p.startswith('(') and p.endswith(')'):
-            inner = p[1:-1]
-            for token in inner.split(','):
-                token_clean = token.strip().replace('아파트', '').replace('빌딩', '').replace('단지', '').replace('동', '')
-                if len(token_clean) >= 2 and token_clean in base_road_addr:
-                    is_redundant_building_paren = True
+        p_simp = simplify_addr(p)
+        
+        is_dup_apartment = False
+        if p_simp and (p_simp in base_simp or base_simp in p_simp):
+            is_dup_apartment = True
+        else:
+            for word in p.split():
+                w_simp = simplify_addr(word)
+                if len(w_simp) >= 2 and w_simp in base_simp:
+                    is_dup_apartment = True
                     break
 
-        if is_redundant_building_paren:
+        if is_dup_apartment:
             continue
 
         if p not in base_road_addr:
@@ -457,6 +475,10 @@ def master_juso_converter(keyword):
         full_result = f"{base_road_addr} {' '.join(final_details)}"
     else:
         full_result = base_road_addr
+
+    if delivery_notes:
+        cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
+        full_result = f"{full_result} ({cleaned_notes})"
 
     return remove_duplicate_words(full_result)
 
@@ -518,7 +540,6 @@ if uploaded_file is not None:
                         length = sum(2 if ord(char) > 127 else 1 for char in val)
                         if length > max_len:
                             max_len = length
-                    # 배송지(D열 등)가 잘리지 않도록 넉넉하게 설정하되 최대 80 제한
                     adjusted_width = max(max_len + 4, 12)
                     worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
 
