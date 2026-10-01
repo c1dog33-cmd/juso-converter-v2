@@ -50,7 +50,7 @@ def clean_product_name(val):
     if '송풍구' in s or '거치대' in s or '태블릿' in s:
         return "태블릿 송풍구 거치대"
     
-    # 1. 케이블 상품 정제 규칙 (m 및 cm 단위 모두 인식하도록 개선)
+    # 1. 케이블 상품 정제 규칙 (m 및 cm 단위 모두 인식)
     if '케이블' in s:
         qty = 1
         if '☞' in s:
@@ -169,8 +169,8 @@ def remove_duplicate_words(addr_str):
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
     addr_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', addr_str)
 
-    # 알파벳/단일 문자 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: A동 202 -> A동 202호)
-    addr_str = re.sub(r'\b([가A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
+    # 가동, 나동, 라동 등 한글 동 이름 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가 (예: 라동 204 -> 라동 204호)
+    addr_str = re.sub(r'\b([가-힣A-Za-z]+동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
 
     words = addr_str.split()
     clean_words = []
@@ -205,8 +205,8 @@ def master_juso_converter(keyword):
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
     kw_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', kw_str)
 
-    # 알파벳/단일 문자 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: A동 202 -> A동 202호)
-    kw_str = re.sub(r'\b([가A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', kw_str)
+    # 가동, 나동, 라동 등 한글 동 이름 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가 (예: 라동 204 -> 라동 204호)
+    kw_str = re.sub(r'\b([가-힣A-Za-z]+동)\s*(\d+)(?!호)\b', r'\1 \2호', kw_str)
     
     # [규칙 1] 특정 예외 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
@@ -225,7 +225,7 @@ def master_juso_converter(keyword):
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
     # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명 등) 추출 및 원본에서 분리
-    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가A-Za-z]\s*동\s*\d+호?|\b[가A-Za-z]\s*동\d+|\b[가A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
+    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가-힣A-Za-z]+\s*동\s*\d+호?|\b[가-힣A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
     extra_details = re.findall(extra_pattern, kw_str)
     
     # 검색용 쿼리 생성 시 상세 부가정보 일시 제거
@@ -272,24 +272,19 @@ def master_juso_converter(keyword):
     sido_sigungu_dong = " ".join(sido_sigungu_dong_tokens)
     building_name_candidate = " ".join(building_tokens)
     
-    # 5. 다단계 검색 후보군 생성
+    # 5. 다단계 검색 후보군 생성 (지번 주소 검색을 최우선으로 배치하여 잘못된 건물명 매칭 방지)
     query_candidates = []
     
+    if sido_sigungu_dong and jibeon_token:
+        query_candidates.append(f"{sido_sigungu_dong} {jibeon_token}")
+
     if '불로동' in search_q_str:
-        if sido_sigungu_dong and jibeon_token:
-            query_candidates.append(f"인천광역시 검단구 불로동 {jibeon_token}")
         query_candidates.append(search_q_str.replace('서구', '검단구').replace('서해구', '검단구'))
 
     elif '서구' in search_q_str:
         seohae_q = search_q_str.replace('서구', '서해구')
-        if sido_sigungu_dong and jibeon_token:
-            seohae_dong = sido_sigungu_dong.replace('서구', '서해구')
-            query_candidates.append(f"{seohae_dong} {jibeon_token}")
         query_candidates.append(seohae_q)
 
-    if sido_sigungu_dong and jibeon_token:
-        query_candidates.append(f"{sido_sigungu_dong} {jibeon_token}")
-        
     if search_q_str not in query_candidates:
         query_candidates.append(search_q_str)
         
@@ -406,7 +401,7 @@ def master_juso_converter(keyword):
 # --- [ Streamlit 웹 UI ] ---
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
-st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정")
+st.title("🛍️️ 스마트샵 주소 변환 & 엑셀 수정")
 st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
