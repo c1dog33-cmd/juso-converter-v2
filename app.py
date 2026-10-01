@@ -102,7 +102,19 @@ def clean_product_name(val):
         else:
             return target
 
-    # 2. 케이스 상품 정제 규칙 ('케이스' 글자가 포함된 경우)
+    # 2. S10플러스 / 975 등 모델 단독 표기 상품 처리 ('케이스' 글자가 없어도 인식)
+    if 'S10플러스' in s or '975' in s or 'G975' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        if qty > 1: return f"S10플러스[{qty}]"
+        else: return "S10플러스"
+
+    # 3. 케이스 상품 정제 규칙 ('케이스' 글자가 포함된 경우)
     if '케이스' not in s:
         return s
     
