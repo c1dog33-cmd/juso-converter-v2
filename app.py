@@ -32,7 +32,21 @@ def clean_product_name(val):
         return val
     s = str(val).strip()
     
-    # 0. 태블릿/송풍구 거치대 상품 처리
+    # 0-1. 렌즈보호커버 상품 정제 규칙
+    if '렌즈' in s or 'Lens Guards' in s or '렌즈가드' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        if qty > 1:
+            return f"렌즈보호커버[{qty}]"
+        else:
+            return "렌즈보호커버"
+
+    # 0-2. 태블릿/송풍구 거치대 상품 처리
     if '송풍구' in s or '거치대' in s or '태블릿' in s:
         return "태블릿 송풍구 거치대"
     
