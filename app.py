@@ -15,9 +15,10 @@ def fix_zipcode(val):
     val_str = str(val).split('.')[0].strip()
     return val_str.zfill(5) if val_str else ""
 
-# --- [ 특정 예외 주소 강제 매핑 사전 ] ---
+# --- [ 특정 예외 주소 강제 매핑 사전 (남산타운, 불로동 등) ] ---
 SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
+    "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
 }
 
 # --- [ openpyxl 제어 문자 에러 방지 함수 ] ---
@@ -197,14 +198,28 @@ def master_juso_converter(keyword):
     # [행정구역 개편 대응] 충북 음성군 대소면 -> 대소읍 자동 변환
     kw_str = kw_str.replace('대소면', '대소읍')
 
-    # [규칙 1] 특정 예외 주소 강제 매핑 체크 (예: 불로동 268-2)
+    # [규칙 1] 특정 예외 주소 강제 매핑 체크 (남산타운, 불로동 268-2 등)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
             extra_part = kw_str
             for part in target_key.split():
                 extra_part = extra_part.replace(part, '')
-            extra_part = re.sub(r'인천광역시|검단구|서구|불로동', '', extra_part).strip()
-            return remove_duplicate_words(f"{override_addr} {extra_part}")
+            # 상세 동, 호수 정보 추출
+            extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+호|\d+층)'
+            found_details = re.findall(extra_pattern, extra_part)
+            
+            building_names = []
+            dongs = []
+            hos = []
+            for d in found_details:
+                for tok in d.split():
+                    if re.search(r'\d+호$|호$', tok) or tok.endswith('호'): hos.append(tok)
+                    elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
+                    else: building_names.append(tok)
+            
+            ordered_details = building_names + dongs + hos
+            final_res = f"{override_addr} {' '.join(ordered_details)}"
+            return remove_duplicate_words(final_res)
 
     # [규칙 2] 인천 서구 불로동 -> 검단구 불로동 강제 매핑
     if '불로동' in kw_str:
@@ -359,7 +374,6 @@ def master_juso_converter(keyword):
         if p_clean and (p_clean in base_clean or p_norm in base_norm):
             continue
 
-        # 중복 아파트 이름 방지 필터
         is_redundant_bldg = False
         if ('풍림아파트' in base_road_addr and '풍림아파트' in p) or ('남산타운' in base_road_addr and '남산타운' in p):
             is_redundant_bldg = True
