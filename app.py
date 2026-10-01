@@ -20,6 +20,12 @@ SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12",
 }
 
+# --- [ openpyxl 제어 문자 에러 방지 함수 ] ---
+def remove_illegal_chars(val):
+    if isinstance(val, str):
+        return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
+    return val
+
 # --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
@@ -180,7 +186,6 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', kw_str)
     
     # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
-    kw_str = re.sub(r'동(\d)', r'동 \1', addr_str if 'addr_str' in locals() else '동\1') # safely handled below via regex
     kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
 
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
@@ -373,7 +378,7 @@ def master_juso_converter(keyword):
             building_parts = []
             unit_parts = []
             for p in needed_details:
-                # '호'나 '층'이 포함되어 있으면서 '동'이 포함되어 있지 않은 경우만 호수(unit)로 분류
+                # '호'나 '층'이 포함되어 있으면서 '동'이 포함되지 않은 경우만 호수(unit)로 분류
                 if re.search(r'(\d+호|\d+층|B\d+호)', p) and not re.search(r'\d+동', p):
                     unit_parts.append(p)
                 else:
@@ -422,6 +427,10 @@ if uploaded_file is not None:
             target_columns = ['수취인명', '전화', '우편번호', '배송지', '선택정보', '기타', '구분']
             if len(df.columns) == len(target_columns):
                 df.columns = target_columns
+
+            # 엑셀 저장 시 openpyxl 제어 문자 에러(IllegalCharacterError) 방지 정제 적용
+            for col in df.columns:
+                df[col] = df[col].apply(remove_illegal_chars)
 
             output = io.BytesIO()
             with pd.ExcelWriter(output, engine='openpyxl') as writer:
