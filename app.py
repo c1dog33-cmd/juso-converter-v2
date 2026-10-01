@@ -390,9 +390,9 @@ def master_juso_converter(keyword):
 
 
 # --- [ Streamlit 웹 UI ] ---
-st.set_page_config(page_title="자동 주소 변환기", page_icon="🚚", layout="centered")
+st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
-st.title("🚚 만능 주소 변환 & 엑셀 정제 웹 앱")
+st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정")
 st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
