@@ -356,7 +356,7 @@ def master_juso_converter(keyword):
         if p_clean and (p_clean in base_clean or p_norm in base_norm):
             continue
 
-        # 중복 아파트 이름 방지 필터 (예: 수원 풍림아파트 중복 제거)
+        # 중복 아파트 이름 방지 필터
         is_redundant_bldg = False
         if '풍림아파트' in base_road_addr and '풍림아파트' in p:
             is_redundant_bldg = True
@@ -379,22 +379,39 @@ def master_juso_converter(keyword):
         if p not in base_road_addr:
             needed_details.append(p)
 
-    # 8. [건물명 ➔ 동 ➔ 호수] 순서 정렬 및 조합
+    # 8. [건물명 ➔ 동 ➔ 호수] 순서 정렬 및 숫자형 호수 자동 보정
     building_names = []
     dongs = []
     hos = []
 
-    for p in needed_details:
-        sub_tokens = p.split()
-        for tok in sub_tokens:
-            if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
-                hos.append(tok)
-            elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
-                dongs.append(tok)
-            else:
-                building_names.append(tok)
+    # extra_details 안의 토큰들을 쪼개서 세부 분류
+    flat_tokens = []
+    for item in needed_details:
+        for t in item.split():
+            flat_tokens.append(t)
 
-    ordered_details = building_names + dongs + hos
+    for tok in flat_tokens:
+        if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+            hos.append(tok)
+        elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
+            dongs.append(tok)
+        else:
+            building_names.append(tok)
+
+    # 숫자만 덜렁 있는 경우(예: '204') 건물명/동이 있으면 호수로 자동 변환
+    final_hos = []
+    final_bldgs = []
+    for b in building_names:
+        if b.isdigit() and (building_names or dongs):
+            final_hos.append(b + "호")
+        else:
+            final_bldgs.append(b)
+
+    for h in hos:
+        if h not in final_hos:
+            final_hos.append(h)
+
+    ordered_details = final_bldgs + dongs + final_hos
     # 중복 제거
     seen = set()
     final_details = []
