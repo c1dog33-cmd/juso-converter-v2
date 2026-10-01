@@ -191,15 +191,8 @@ def master_juso_converter(keyword):
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
     
-    # [최신 행정구역 개편 자동 매핑 적용]
-    # 1) 충북 음성군 대소면 -> 대소읍 자동 변환
+    # [최신 행정구역 개편 1] 충북 음성군 대소면 -> 대소읍 자동 변환
     kw_str = kw_str.replace('대소면', '대소읍')
-    
-    # 2) 인천 중구 영종지역(운서동, 중산동, 영종동, 운북동, 용유동) -> 영종구 자동 변환
-    yeongjong_dongs = ['운서동', '중산동', '영종동', '운북동', '용유동']
-    for d in yeongjong_dongs:
-        if d in kw_str and ('중구' in kw_str or '인천' in kw_str):
-            kw_str = kw_str.replace('중구', '영종구')
 
     # [규칙 1] 특정 예외 주소 강제 매핑 체크 (예: 불로동 268-2)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
@@ -245,7 +238,7 @@ def master_juso_converter(keyword):
         extra = search_q_str.replace('광주광역시', '').replace('전남광주통합특별시', '').replace('남구', '').replace('월산동', '').replace('986-3', '').replace('986', '').strip()
         return remove_duplicate_words(f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip())
 
-    # 4. 스마트 토큰 분리 (읍, 면 단위를 주소 구역으로 올바르게 인식하도록 추가)
+    # 4. 스마트 토큰 분리
     base_tokens = search_q_str.split()
     sido_sigungu_dong_tokens = []
     jibeon_token = ""
@@ -265,7 +258,7 @@ def master_juso_converter(keyword):
     sido_sigungu_dong = " ".join(sido_sigungu_dong_tokens)
     building_name_candidate = " ".join(building_tokens)
     
-    # 5. 다단계 검색 후보군 생성 (지번 주소 검색을 최우선으로 배치)
+    # 5. 다단계 검색 후보군 생성 (API는 '중구' 기준으로 조회해야 정상 검색됨)
     query_candidates = []
     
     if sido_sigungu_dong and jibeon_token:
@@ -354,7 +347,6 @@ def master_juso_converter(keyword):
             if p_clean and (p_clean in base_clean or p_norm in base_norm):
                 continue
 
-            # API 결과에 이미 포함된 아파트/건물명과 중복되는 괄호 항목 필터링
             is_redundant_building_paren = False
             if p.startswith('(') and p.endswith(')'):
                 inner = p[1:-1]
@@ -380,13 +372,19 @@ def master_juso_converter(keyword):
             building_parts = []
             unit_parts = []
             for p in needed_details:
-                # '호'나 '층'이 포함되어 있으면서 '동'이 포함되지 않은 경우만 호수(unit)로 분류
                 if re.search(r'(\d+호|\d+층|B\d+호)', p) and not re.search(r'\d+동', p):
                     unit_parts.append(p)
                 else:
                     building_parts.append(p)
             sorted_details = building_parts + unit_parts
             full_result = f"{base_road_addr} {' '.join(sorted_details)}"
+
+    # [최신 행정구역 개편 2] 최종 도로명 주소가 완성된 직후, 영종지역 동(운서동, 중산동 등)이 포함된 경우 '중구'를 '영종구'로 최종 치환
+    yeongjong_dongs = ['운서동', '중산동', '영종동', '운북동', '용유동']
+    for d in yeongjong_dongs:
+        if d in kw_str and '중구' in full_result:
+            full_result = full_result.replace('중구', '영종구')
+            break
 
     return remove_duplicate_words(full_result)
 
