@@ -322,12 +322,18 @@ def master_juso_converter(keyword):
     if not base_road_addr:
         return remove_duplicate_words(kw_str)
 
-    # 6. 아파트/건물명 보완 결합
-    target_bd = api_bd_nm.strip() if api_bd_nm else building_name_candidate.strip()
-    if target_bd and target_bd not in base_road_addr:
-        base_road_addr = f"{base_road_addr} {target_bd}"
+    # 6. API 결과 건물명 결합
+    api_bd = api_bd_nm.strip() if api_bd_nm else ""
+    if api_bd and api_bd not in base_road_addr:
+        base_road_addr = f"{base_road_addr} {api_bd}"
 
-    # 7. 최종 결과 조합: 도로명 주소 맨 뒤에 중복되지 않는 상세 부가정보(extra_details) 배치
+    # 7. 사용자가 입력한 맨 끝 상호명/이름(building_name_candidate)이 지워지지 않도록 맨 끝에 안전하게 보존
+    user_bd = building_name_candidate.strip()
+    if user_bd and user_bd not in base_road_addr:
+        if user_bd not in extra_details:
+            extra_details.append(user_bd)
+
+    # 8. 최종 결과 조합: 도로명 주소 맨 뒤에 중복되지 않는 상세 부가정보 및 상호명 배치
     full_result = base_road_addr
     if extra_details:
         needed_details = []
