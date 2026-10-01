@@ -187,7 +187,10 @@ def master_juso_converter(keyword):
         
     kw_str = str(keyword).strip()
     
-    # 0. 행정구역 띄어쓰기 사전 전처리
+    # 0. 하이픈 형식의 동/호수 안전 전처리 (예: 40-1617호 -> 40동 1617호)
+    kw_str = re.sub(r'\b(\d+)-(\d+)호\b', r'\1동 \2호', kw_str)
+    
+    # 0-1. 행정구역 띄어쓰기 사전 전처리
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
     
@@ -358,7 +361,7 @@ def master_juso_converter(keyword):
 
         # 중복 아파트 이름 방지 필터
         is_redundant_bldg = False
-        if '풍림아파트' in base_road_addr and '풍림아파트' in p:
+        if ('풍림아파트' in base_road_addr and '풍림아파트' in p) or ('남산타운' in base_road_addr and '남산타운' in p):
             is_redundant_bldg = True
 
         if is_redundant_bldg:
@@ -384,7 +387,6 @@ def master_juso_converter(keyword):
     dongs = []
     hos = []
 
-    # extra_details 안의 토큰들을 쪼개서 세부 분류
     flat_tokens = []
     for item in needed_details:
         for t in item.split():
@@ -398,7 +400,6 @@ def master_juso_converter(keyword):
         else:
             building_names.append(tok)
 
-    # 숫자만 덜렁 있는 경우(예: '204') 건물명/동이 있으면 호수로 자동 변환
     final_hos = []
     final_bldgs = []
     for b in building_names:
@@ -412,7 +413,6 @@ def master_juso_converter(keyword):
             final_hos.append(h)
 
     ordered_details = final_bldgs + dongs + final_hos
-    # 중복 제거
     seen = set()
     final_details = []
     for x in ordered_details:
