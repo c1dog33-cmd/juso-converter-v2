@@ -143,7 +143,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 정제 및 텍스트 교정 함수 (위험한 하이픈 변환 규칙 제거 완료) ] ---
+# --- [ 정제 및 텍스트 교정 함수 ] ---
 def remove_duplicate_words(addr_str):
     if not addr_str:
         return addr_str
@@ -154,7 +154,7 @@ def remove_duplicate_words(addr_str):
     addr_str = re.sub(r'간\s+석동', '간석동', addr_str)
     addr_str = re.sub(r'가\s+능동', '가능동', addr_str)
 
-    # 슬래시 교정 (슬래시는 동/호수로 변환)
+    # 슬래시 교정
     addr_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', addr_str)
     
     # 동/호 띄어쓰기 교정
@@ -168,8 +168,8 @@ def remove_duplicate_words(addr_str):
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가
     addr_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', addr_str)
 
-    # 가동, 나동, 라동 등 한글 동 이름 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가
-    addr_str = re.sub(r'\b([가-힣A-Za-z]+동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
+    # 건물 동 이름(가,나,다,라,마,바,사,아,자,차,카,타,파,하 및 알파벳) 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가 (법정동 보호)
+    addr_str = re.sub(r'\b([가나다라마바사아자차카타파하A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
 
     words = addr_str.split()
     clean_words = []
@@ -207,8 +207,8 @@ def master_juso_converter(keyword):
             kw_str = re.sub(r'인천광역시\s+서구', '인천광역시 검단구', kw_str)
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
-    # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명 등) 추출 및 원본에서 분리
-    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가-힣A-Za-z]+\s*동\s*\d+호?|\b[가-힣A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
+    # 1. 상세 부가정보(건물 동, 호수, 괄호 내용 등) 추출 및 원본에서 분리 (법정동 보호)
+    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
     extra_details = re.findall(extra_pattern, kw_str)
     
     # 검색용 쿼리 생성 시 상세 부가정보 일시 제거
