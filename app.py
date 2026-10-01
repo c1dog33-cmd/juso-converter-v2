@@ -156,50 +156,10 @@ def remove_duplicate_words(addr_str):
     clean_words = []
     for w in words:
         clean_w = w.strip('(),')
-        # 파이썬 올바른 논리 연산자 'or' 사용
         if not clean_words or clean_w != clean_words[-1].strip('(),'):
             clean_words.append(w)
             
     return ' '.join(clean_words)
-
-# --- [ 완벽한 꼬리말 중복 반복 및 중복 괄호 제거 함수 ] ---
-def comprehensive_address_cleanup(addr_str):
-    if not addr_str:
-        return addr_str
-        
-    words = addr_str.split()
-    n = len(words)
-    # 뒤쪽에 반복되는 단어 블록(구문) 탐지하여 잘라내기
-    for length in range(n // 2, 0, -1):
-        for i in range(n - length):
-            chunk = words[i:i+length]
-            for j in range(i + length, n - length + 1):
-                if words[j:j+length] == chunk:
-                    addr_str = " ".join(words[:j])
-                    words = addr_str.split()
-                    n = len(words)
-                    break
-            else:
-                continue
-            break
-
-    # 이미 앞쪽에 등장한 내용과 완전히 겹치는 괄호 블록 제거 (예: 중복된 (송촌빌딩) 등)
-    paren_matches = re.findall(r'\(([^)]+)\)', addr_str)
-    for p_inner in paren_matches:
-        parts_before = addr_str.split(f"({p_inner})")[0]
-        p_clean = re.sub(r'\s+', '', p_inner)
-        before_clean = re.sub(r'\s+', '', parts_before)
-        if p_clean and p_clean in before_clean:
-            addr_str = addr_str.replace(f"({p_inner})", "")
-            
-    # 연속된 중복 단어 정리
-    words = addr_str.split()
-    cleaned_words = []
-    for w in words:
-        if not cleaned_words or w != cleaned_words[-1]:
-            cleaned_words.append(w)
-
-    return re.sub(r'\s+', ' ', " ".join(cleaned_words)).strip()
 
 # --- [ 만능 주소 변환 엔진 ] ---
 def master_juso_converter(keyword):
@@ -222,6 +182,9 @@ def master_juso_converter(keyword):
     # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기 (예: 101동1406호 -> 101동 1406호)
     kw_str = re.sub(r'동(\d)', r'동 \1', kw_str)
 
+    # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: 111동 1404 -> 111동 1404호)
+    kw_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', kw_str)
+
     # 알파벳/단일 문자 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가 (예: A동 202 -> A동 202호)
     kw_str = re.sub(r'\b([가A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', kw_str)
     
@@ -241,16 +204,10 @@ def master_juso_converter(keyword):
             kw_str = re.sub(r'인천광역시\s+서구', '인천광역시 검단구', kw_str)
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
-    # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명, 상호명 등) 추출 및 원본에서 분리
-    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가A-Za-z]\s*동\s*\d+호?|\b[가A-Za-z]\s*동\d+|\b[가A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터|의료기|상사|상회|스토어|샵|마트|사무실|공업사|대리점|학원|교습소))'
+    # 1. 상세 부가정보(동/호수, 괄호 내용, 병원/기관명 등) 추출 및 원본에서 분리
+    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가A-Za-z]\s*동\s*\d+호?|\b[가A-Za-z]\s*동\d+|\b[가A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
     extra_details = re.findall(extra_pattern, kw_str)
     
-    address_end_match = re.search(r'(?:로|길)\s+\d+(?:-\d+)?\s+(.+)$', kw_str)
-    if address_end_match:
-        trailing_text = address_end_match.group(1).strip()
-        if trailing_text and trailing_text not in extra_details:
-            extra_details.append(trailing_text)
-
     # 검색용 쿼리 생성 시 상세 부가정보 일시 제거
     search_q_str = re.sub(extra_pattern, '', kw_str)
     search_q_str = ' '.join(search_q_str.split())
@@ -370,46 +327,43 @@ def master_juso_converter(keyword):
     if target_bd and target_bd not in base_road_addr:
         base_road_addr = f"{base_road_addr} {target_bd}"
 
-    # 7. 최종 결과 조합 및 꼬리말 중복 제거 적용
+    # 7. 최종 결과 조합: 도로명 주소 맨 뒤에 중복되지 않는 상세 부가정보(extra_details) 배치
     full_result = base_road_addr
     if extra_details:
         needed_details = []
-        base_lower = base_road_addr.replace(' ', '')
-        
         for p in extra_details:
-            p_str = p.strip()
-            p_clean = re.sub(r'[\s(),]', '', p_str)
-            
-            if p_clean and p_clean in base_lower:
-                continue
-                
-            if p_str.startswith('(') and p_str.endswith(')'):
-                inner = p_str[1:-1].strip()
-                all_in = True
-                for part in re.split(r'[,/]\s*', inner):
-                    if part.strip() and part.strip().replace(' ', '') not in base_lower:
-                        all_in = False
-                        break
-                if all_in:
-                    continue
-                    
-            dong_ho_match = re.search(r'(\d+동\s*\d+호?)', p_str)
-            if dong_ho_match and any(bd in base_road_addr for bd in ['캐슬골드파크', '우미린', '풀하우스', '아파트', '단지', '푸르지오', '이편한', '자이', '힐스테이트']):
-                needed_details.append(dong_ho_match.group(1))
+            p_clean = re.sub(r'[\s(),]', '', p)
+            base_clean = re.sub(r'[\s(),]', '', base_road_addr)
+            p_norm = p_clean.replace('LH', '엘에이치')
+            base_norm = base_clean.replace('LH', '엘에이치')
+
+            if p_clean and (p_clean in base_clean or p_norm in base_norm):
                 continue
 
-            if p_str not in base_road_addr:
-                needed_details.append(p_str)
+            # API 결과에 이미 포함된 아파트/건물명과 중복되는 괄호 항목 필터링
+            is_redundant_building_paren = False
+            if p.startswith('(') and p.endswith(')'):
+                inner = p[1:-1]
+                inner_norm = re.sub(r'[\s동시구군읍면리아파트빌딩단지]', '', inner).replace('LH', '엘에이치')
+                base_inner_norm = re.sub(r'[\s동시구군읍면리아파트빌딩단지]', '', base_road_addr).replace('LH', '엘에이치')
+                if inner_norm and inner_norm in base_inner_norm:
+                    is_redundant_building_paren = True
+                else:
+                    for token in inner.split(','):
+                        token_clean = token.strip().replace('아파트', '').replace('빌딩', '').replace('단지', '').replace('동', '')
+                        token_norm = token_clean.replace('LH', '엘에이치')
+                        if len(token_norm) >= 2 and token_norm in base_road_addr.replace('LH', '엘에이치'):
+                            is_redundant_building_paren = True
+                            break
+
+            if is_redundant_building_paren:
+                continue
+
+            if p not in base_road_addr:
+                needed_details.append(p)
 
         if needed_details:
-            unique_details = []
-            for d in needed_details:
-                if d not in unique_details:
-                    unique_details.append(d)
-            full_result = f"{base_road_addr} {' '.join(unique_details)}"
-
-    # 꼬리말 중복 반복 문구 최종 차단
-    full_result = comprehensive_address_cleanup(full_result)
+            full_result = f"{base_road_addr} {' '.join(needed_details)}"
 
     return remove_duplicate_words(full_result)
 
