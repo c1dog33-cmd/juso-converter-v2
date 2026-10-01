@@ -245,8 +245,10 @@ def master_juso_converter(keyword):
     building_tokens = []
     
     for t in base_tokens:
+        # 번지수가 '0'이거나 일반 번지수인 경우 분리 (단, 2차/2단지 검색 시 '0'번지로 인한 1단지 오탐을 막기 위해 지번 0은 검색어에서 제외)
         if re.match(r'^\d+(-\d+)?$', t) or re.match(r'^산\d+(-\d+)?$', t):
-            jibeon_token = t
+            if t != '0' or ('2차' not in kw_str and '2단지' not in kw_str):
+                jibeon_token = t
         elif any(t.endswith(s) for s in ['도', '시', '구', '군', '읍', '면', '동', '리', '가', '로', '길']) and t != '시':
             if not jibeon_token:
                 sido_sigungu_dong_tokens.append(t)
