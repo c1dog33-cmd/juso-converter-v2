@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (모델+필름 옵션 및 기존 규칙 통합) ] ---
+# --- [ 상품명 정제 함수 (슬래시 뒤 옵션 영역 우선 스캔 및 기존 규칙 통합) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -71,6 +71,29 @@ def clean_product_name(val):
             if '택배' in s: res += " 택배"
             return res
 
+    # 🚀 [우선 탐지] 슬래시('/') 뒤쪽(옵션 영역)을 먼저 스캔하여 S10 5G 등 실제 선택 모델 추출
+    if '/' in s:
+        slash_parts = s.split('/')
+        for p in reversed(slash_parts):
+            m = re.search(r'(S\s*10\s*5G|S\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50)', p, re.IGNORECASE)
+            if m:
+                raw_model = m.group(1).replace(" ", "").upper()
+                if raw_model == 'S105G': target_model = 'S10 5G'
+                elif raw_model == 'S20플러스' or raw_model == 'S20+': target_model = 'S20플러스'
+                elif raw_model == '노트10플러스': target_model = '노트10플러스'
+                else: target_model = raw_model
+                
+                qty = 1
+                if '☞' in s:
+                    after_arrow = s.split('☞')[1].strip()
+                    qty_match = re.match(r'^(\d+)\s*(EA|개)?', after_arrow, re.IGNORECASE)
+                    if qty_match:
+                        qty = int(qty_match.group(1))
+                res = f"{target_model}[{qty}]" if qty > 1 else target_model
+                if has_film: res += " +필름"
+                if '택배' in s: res += " 택배"
+                return res
+
     # 0-0-1. [최우선] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
     if '색상선택:' in s or '옵션선택:' in s:
         qty = 1
@@ -113,18 +136,15 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 0-0. [범용 스마트 탐지] 갤럭시 및 LG 스마트폰 모델명(V50S, V50, 노트, S시리즈 등) 자동 추출
-    smartphone_match = re.search(r'(노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
+    # 0-0. [범용 스마트 탐지] 갤럭시 및 LG 스마트폰 모델명 자동 추출
+    smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
-        if raw_model in ['N960', 'SM-N960']:
-            target_model = '노트9'
-        elif raw_model == 'V50S':
-            target_model = 'V50S'
-        elif raw_model == 'V50':
-            target_model = 'V50'
-        else:
-            target_model = raw_model
+        if raw_model == 'S105G': target_model = 'S10 5G'
+        elif raw_model in ['N960', 'SM-N960']: target_model = '노트9'
+        elif raw_model == 'V50S': target_model = 'V50S'
+        elif raw_model == 'V50': target_model = 'V50'
+        else: target_model = raw_model
 
         qty = 1
         if '☞' in s:
