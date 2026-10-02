@@ -27,16 +27,39 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (필름 필요없음 예외 처리 반영) ] ---
+# --- [ 상품명 정제 함수 (범용 갤럭시 모델 자동 탐지 및 필름 옵션 엄격 판별) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
     s = str(val).strip()
     
-    # 추가 액정필름 선택 여부 감지 ('필요없음'이 포함된 경우 제외, 풀액정/액정필름 선택 시에만 인정)
+    # 추가 액정필름 선택 여부 감지 ('필요없음'이 포함된 경우 제외)
     has_film = False
     if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
+
+    # 0-0. [범용 스마트 탐지] 상품명 어디에 있든 갤럭시 모델명(S, 노트, A, Z, 와이드 등)을 자동 추출
+    galaxy_model_match = re.search(r'(노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\d+)', s, re.IGNORECASE)
+    if galaxy_model_match:
+        raw_model = galaxy_model_match.group(1).replace(" ", "").upper()
+        # N960 등 모델 번호가 잡히면 노트9로 표준화
+        if raw_model in ['N960', 'SM-N960']:
+            target_model = '노트9'
+        else:
+            target_model = raw_model
+
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        
+        res = f"{target_model}[{qty}]" if qty > 1 else target_model
+        if has_film: res += " +필름"
+        if '택배' in s: res += " 택배"
+        return res
     
     # 0-1. 렌즈보호커버 상품 정제 규칙
     if '렌즈' in s or 'Lens Guards' in s or '렌즈가드' in s:
@@ -107,20 +130,7 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
 
-    # 2. S10플러스 / 975 등 모델 단독 표기 상품 처리 ('케이스' 글자가 없어도 인식)
-    if 'S10플러스' in s or '975' in s or 'G975' in s:
-        qty = 1
-        if '☞' in s:
-            parts = s.split('☞')
-            after = parts[1].strip() if len(parts) > 1 else ""
-            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
-            if qty_match:
-                qty = int(qty_match.group(1))
-        res = f"S10플러스[{qty}]" if qty > 1 else "S10플러스"
-        if has_film: res += " +필름"
-        return res
-
-    # 3. 케이스 상품 정제 규칙 ('케이스' 글자가 포함된 경우)
+    # 2. 기타 케이스 상품 정제 규칙 ('케이스' 글자가 포함된 경우)
     if '케이스' not in s:
         res = s
         if has_film: res += " +필름"
@@ -137,7 +147,6 @@ def clean_product_name(val):
     else:
         base = s
         
-    # '모델선택:'이 포함된 경우 기준 단어 포함하여 앞부분 모두 삭제
     if '모델선택:' in base:
         parts = base.split('모델선택:')
         target = parts[-1].strip()
@@ -150,15 +159,6 @@ def clean_product_name(val):
         target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
         
     target = re.sub(r'\([^)]*\)', '', target).strip()
-    
-    if 'S10플러스' in target or '975' in target:
-        target = 'S10플러스'
-    elif '와이드6' in target and 'A13' in target:
-        target = 'A13'
-    elif 'S10' in target and '5G' in target:
-        target = 'S10 5G'
-    elif 'S10' in target and ('973' in target or '기본' in target):
-        target = 'S10'
     
     target = re.sub(r'케이스', '', target)
     target = re.sub(r'풀액정', '', target)
@@ -183,27 +183,17 @@ def remove_duplicate_words(addr_str):
     if not addr_str:
         return addr_str
     
-    # 행정구역 띄어쓰기 교정
     addr_str = re.sub(r'남동\s+구', '남동구', addr_str)
     addr_str = re.sub(r'서\s+구', '서구', addr_str)
     addr_str = re.sub(r'간\s+석동', '간석동', addr_str)
     addr_str = re.sub(r'가\s+능동', '가능동', addr_str)
 
-    # 슬래시 교정
     addr_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', addr_str)
-    
-    # 동/호 띄어쓰기 교정
     addr_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', addr_str)
-    
-    # 동 바로 뒤에 숫자가 붙어 있는 경우 한 칸 띄우기
     addr_str = re.sub(r'동(\d)', r'동 \1', addr_str)
-
-    # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가
     addr_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', addr_str)
-
-    # 건물 동 이름 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가
     addr_str = re.sub(r'\b([가나다라마바사아자차카타파하A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
 
     words = addr_str.split()
@@ -222,25 +212,21 @@ def master_juso_converter(keyword):
         
     kw_str = str(keyword).strip()
     
-    # 0-0-1. 동/호수 띄어쓰기 및 하이픈 안전 전처리 (예: 111 동 -> 111동, 40-1617호 -> 40동 1617호)
     kw_str = re.sub(r'(\d+)\s+동\b', r'\1동', kw_str)
     kw_str = re.sub(r'(\d+)\s+호\b', r'\1호', kw_str)
     kw_str = re.sub(r'(\d+)\s+층\b', r'\1층', kw_str)
     kw_str = re.sub(r'\b(\d+)-(\d+)호\b', r'\1동 \2호', kw_str)
     
-    # 0-0. 배송 메시지(문 앞 부탁 등) 사전 분리 추출
     delivery_note_pattern = r'([가-힣\s]+(?:부탁드립니다?|놓아주세요?|전해주세요?|맡겨주세요?|보관해주세요?|부탁해요?))'
     delivery_notes = re.findall(delivery_note_pattern, kw_str)
     for note in delivery_notes:
         kw_str = kw_str.replace(note, '').strip()
     kw_str = re.sub(r'\s*\.\s*', ' ', kw_str).strip()
     
-    # 0-1. 행정구역 띄어쓰기 및 개편 대응 사전 전처리
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
     kw_str = kw_str.replace('대소면', '대소읍')
 
-    # [규칙 1] 특정 예외 주소 강제 매핑 체크 (남산타운, 불로동 풍경채 등)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
             extra_part = kw_str
@@ -267,21 +253,18 @@ def master_juso_converter(keyword):
                 
             return remove_duplicate_words(final_res)
 
-    # [규칙 2] 인천 서구 불로동 -> 검단구 자동 매핑
     if '불로동' in kw_str:
         kw_str = kw_str.replace('서구', '검단구').replace('서해구', '검단구')
         if '인천광역시 검단구' not in kw_str and '인천 검단구' not in kw_str:
             kw_str = re.sub(r'인천광역시\s+서구', '인천광역시 검단구', kw_str)
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
-    # 1. 상세 부가정보(건물 동, 호수, 층수, 괄호 내용 등) 추출 및 원본에서 분리
     extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
     extra_details = re.findall(extra_pattern, kw_str)
     
     search_q_str = re.sub(extra_pattern, '', kw_str)
     search_q_str = ' '.join(search_q_str.split())
 
-    # 2. 건물명 뒤에 있는 하이픈 형태(예: '103-401') 변환
     tokens_init = search_q_str.split()
     processed_tokens = []
     for i, t in enumerate(tokens_init):
@@ -296,7 +279,6 @@ def master_juso_converter(keyword):
             processed_tokens.append(t)
     search_q_str = " ".join(processed_tokens)
     
-    # 3. 특수 예외 처리 (월산동 등)
     if '월산동 986-3' in search_q_str or '월산동 986' in search_q_str:
         extra = search_q_str.replace('광주광역시', '').replace('전남광주통합특별시', '').replace('남구', '').replace('월산동', '').replace('986-3', '').replace('986', '').strip()
         res_str = f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip()
@@ -305,7 +287,6 @@ def master_juso_converter(keyword):
             res_str = f"{res_str} ({cleaned_notes})"
         return remove_duplicate_words(res_str)
 
-    # 4. 스마트 토큰 분리
     base_tokens = search_q_str.split()
     sido_sigungu_dong_tokens = []
     jibeon_token = ""
@@ -326,15 +307,12 @@ def master_juso_converter(keyword):
     sido_sigungu_dong = " ".join(sido_sigungu_dong_tokens)
     building_name_candidate = " ".join(building_tokens)
     
-    # 5. 다단계 검색 후보군 생성
     query_candidates = []
-    
     if sido_sigungu_dong and jibeon_token:
         query_candidates.append(f"{sido_sigungu_dong} {jibeon_token}")
 
     if '불로동' in search_q_str:
         query_candidates.append(search_q_str.replace('서구', '검단구').replace('서해구', '검단구'))
-
     elif '서구' in search_q_str:
         seohae_q = search_q_str.replace('서구', '서해구')
         query_candidates.append(seohae_q)
@@ -363,7 +341,6 @@ def master_juso_converter(keyword):
                 
                 if juso_list:
                     selected_juso = None
-                    
                     if has_2cha:
                         for juso in juso_list:
                             bd_name = juso.get('bdNm', '').strip()
@@ -404,18 +381,15 @@ def master_juso_converter(keyword):
             full_fallback = f"{full_fallback} ({cleaned_notes})"
         return remove_duplicate_words(full_fallback)
 
-    # 6. API 결과 건물명 결합
     api_bd = api_bd_nm.strip() if api_bd_nm else ""
     if api_bd and api_bd not in base_road_addr:
         base_road_addr = f"{base_road_addr} {api_bd}"
 
-    # 7. 사용자가 입력한 건물명/상호명 후보를 extra_details에 통합
     user_bd = building_name_candidate.strip()
     if user_bd and user_bd not in base_road_addr:
         if user_bd not in extra_details:
             extra_details.append(user_bd)
 
-    # --- [ 상호명 손실 방지 스마트 중복 필터 적용 ] ---
     def simplify_addr(text):
         if not text: return ""
         s = re.sub(r'[\s(),.]', '', text)
@@ -449,7 +423,6 @@ def master_juso_converter(keyword):
         if unique_words:
             needed_details.append(" ".join(unique_words))
 
-    # 8. [건물명 ➔ 동 ➔ 층/호수] 순서 정렬 및 숫자형 호수 자동 보정
     building_names = []
     dongs = []
     hos = []
@@ -538,7 +511,6 @@ if uploaded_file is not None:
             if len(df.columns) == len(target_columns):
                 df.columns = target_columns
 
-            # 엑셀 저장 시 openpyxl 제어 문자 에러(IllegalCharacterError) 방지 정제 적용
             for col in df.columns:
                 df[col] = df[col].apply(remove_illegal_chars)
 
@@ -547,7 +519,6 @@ if uploaded_file is not None:
                 df.to_excel(writer, index=False)
                 worksheet = writer.sheets['Sheet1']
                 
-                # --- [ 열 너비 자동 맞춤 기능 적용 ] ---
                 for col in worksheet.columns:
                     max_len = 0
                     col_letter = openpyxl.utils.get_column_letter(col[0].column)
