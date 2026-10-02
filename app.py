@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (스마트폰 모델명 최우선 절대 순위 반영) ] ---
+# --- [ 상품명 정제 함수 (A20/A30 전용 규칙 및 기존 기능 통합) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -38,7 +38,62 @@ def clean_product_name(val):
     if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
 
-    # 🚀 [절대 최우선 순위] 갤럭시 및 LG 스마트폰 모델명(V50S, V50, 노트, S시리즈 등)을 무조건 먼저 탐지
+    # 🚀 [특수 전용 규칙] A20/A30 복수 호환 케이스 상품 전용 처리 (딱 'A20/A30'만 출력)
+    if 'A20/A30' in s or ('A20' in s and 'A30' in s and '와이드4' in s):
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        res = f"A20/A30[{qty}]" if qty > 1 else "A20/A30"
+        if '택배' in s: res += " 택배"
+        return res
+
+    # 0-0-1. [최우선] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
+    if '색상선택:' in s or '옵션선택:' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        
+        opt_key = '색상선택:' if '색상선택:' in s else '옵션선택:'
+        sub_part = s.split(opt_key)[1].strip()
+        opt_val = re.split(r'[/,☞]', sub_part)[0].strip()
+        opt_val = re.sub(r'\d+[개EA]*$', '', opt_val).strip()
+        
+        res = f"{opt_val}[{qty}]" if qty > 1 else opt_val
+        if '택배' in s: res += " 택배"
+        return res
+
+    # 0-0-2. [사이드미러 빗물가드 커버 옵션] 컬러커버, 클리어커버 전용 처리
+    if '사이드미러' in s or '클리어커버' in s or '컬러커버' in s:
+        if '클리어커버' in s:
+            target = '클리어커버'
+        elif '컬러커버' in s:
+            target = '컬러커버'
+        else:
+            target = '사이드미러가드'
+            
+        last_part = s.split('/')[-1] if '/' in s else s
+        qty = 1
+        m_gae = re.search(r'(\d+)\s*개', last_part)
+        if m_gae:
+            qty = int(m_gae.group(1))
+        else:
+            m_ea = re.search(r'☞\s*(\d+)', last_part)
+            if m_ea:
+                qty = int(m_ea.group(1))
+                
+        res = f"{target}[{qty}]" if qty > 1 else target
+        if '택배' in s: res += " 택배"
+        return res
+
+    # 0-0. [범용 스마트 탐지] 갤럭시 및 LG 스마트폰 모델명(V50S, V50, 노트, S시리즈 등) 자동 추출
     smartphone_match = re.search(r'(노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
@@ -61,48 +116,6 @@ def clean_product_name(val):
         
         res = f"{target_model}[{qty}]" if qty > 1 else target_model
         if has_film: res += " +필름"
-        if '택배' in s: res += " 택배"
-        return res
-
-    # 0-0-2. [옵션 상품] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
-    if '색상선택:' in s or '옵션선택:' in s:
-        qty = 1
-        if '☞' in s:
-            parts = s.split('☞')
-            after = parts[1].strip() if len(parts) > 1 else ""
-            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
-            if qty_match:
-                qty = int(qty_match.group(1))
-        
-        opt_key = '색상선택:' if '색상선택:' in s else '옵션선택:'
-        sub_part = s.split(opt_key)[1].strip()
-        opt_val = re.split(r'[/,☞]', sub_part)[0].strip()
-        opt_val = re.sub(r'\d+[개EA]*$', '', opt_val).strip()
-        
-        res = f"{opt_val}[{qty}]" if qty > 1 else opt_val
-        if '택배' in s: res += " 택배"
-        return res
-
-    # 0-0-3. [사이드미러 빗물가드 커버 옵션] 컬러커버, 클리어커버 전용 처리
-    if '사이드미러' in s or '클리어커버' in s or '컬러커버' in s:
-        if '클리어커버' in s:
-            target = '클리어커버'
-        elif '컬러커버' in s:
-            target = '컬러커버'
-        else:
-            target = '사이드미러가드'
-            
-        last_part = s.split('/')[-1] if '/' in s else s
-        qty = 1
-        m_gae = re.search(r'(\d+)\s*개', last_part)
-        if m_gae:
-            qty = int(m_gae.group(1))
-        else:
-            m_ea = re.search(r'☞\s*(\d+)', last_part)
-            if m_ea:
-                qty = int(m_ea.group(1))
-                
-        res = f"{target}[{qty}]" if qty > 1 else target
         if '택배' in s: res += " 택배"
         return res
     
