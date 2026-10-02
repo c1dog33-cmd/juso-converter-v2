@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 ] ---
+# --- [ 상품명 정제 함수 (우선순위 충돌 해결 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -37,6 +37,25 @@ def clean_product_name(val):
     has_film = False
     if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
+
+    # 0-0-1. [최우선] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
+    if '색상선택:' in s or '옵션선택:' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        
+        opt_key = '색상선택:' if '색상선택:' in s else '옵션선택:'
+        sub_part = s.split(opt_key)[1].strip()
+        opt_val = re.split(r'[/,☞]', sub_part)[0].strip()
+        opt_val = re.sub(r'\d+[개EA]*$', '', opt_val).strip()
+        
+        res = f"{opt_val}[{qty}]" if qty > 1 else opt_val
+        if '택배' in s: res += " 택배"
+        return res
 
     # 0-0-2. [사이드미러 빗물가드 커버 옵션 정제 규칙] 컬러커버, 클리어커버 전용 처리
     if '사이드미러' in s or '클리어커버' in s or '컬러커버' in s:
@@ -58,25 +77,6 @@ def clean_product_name(val):
                 qty = int(m_ea.group(1))
                 
         res = f"{target}[{qty}]" if qty > 1 else target
-        if '택배' in s: res += " 택배"
-        return res
-
-    # 0-0-1. [옵션 상품 정제 규칙] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
-    if '색상선택:' in s or '옵션선택:' in s:
-        qty = 1
-        if '☞' in s:
-            parts = s.split('☞')
-            after = parts[1].strip() if len(parts) > 1 else ""
-            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
-            if qty_match:
-                qty = int(qty_match.group(1))
-        
-        opt_key = '색상선택:' if '색상선택:' in s else '옵션선택:'
-        sub_part = s.split(opt_key)[1].strip()
-        opt_val = re.split(r'[/,☞]', sub_part)[0].strip()
-        opt_val = re.sub(r'\d+[개EA]*$', '', opt_val).strip()
-        
-        res = f"{opt_val}[{qty}]" if qty > 1 else opt_val
         if '택배' in s: res += " 택배"
         return res
 
