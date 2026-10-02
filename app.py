@@ -27,15 +27,15 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (추가 필름 자동 표기 반영) ] ---
+# --- [ 상품명 정제 함수 (필름 필요없음 예외 처리 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
     s = str(val).strip()
     
-    # 추가 액정필름 포함 여부 감지
+    # 추가 액정필름 선택 여부 감지 ('필요없음'이 포함된 경우 제외, 풀액정/액정필름 선택 시에만 인정)
     has_film = False
-    if '추가액정필름' in s or '풀액정필름' in s or '액정필름' in s:
+    if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
     
     # 0-1. 렌즈보호커버 상품 정제 규칙
