@@ -15,7 +15,7 @@ def fix_zipcode(val):
     val_str = str(val).split('.')[0].strip()
     return val_str.zfill(5) if val_str else ""
 
-# --- [ 특정 예외 주소 강제 매핑 사전 (아파트 이름 포함) ] ---
+# --- [ 특정 예외 주소 및 행정개편 강제 매핑 사전 ] ---
 SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12 (불로동, 신검단중앙역풍경채어바니티)",
     "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
@@ -27,11 +27,16 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 ] ---
+# --- [ 상품명 정제 함수 (추가 필름 자동 표기 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
     s = str(val).strip()
+    
+    # 추가 액정필름 포함 여부 감지
+    has_film = False
+    if '추가액정필름' in s or '풀액정필름' in s or '액정필름' in s:
+        has_film = True
     
     # 0-1. 렌즈보호커버 상품 정제 규칙
     if '렌즈' in s or 'Lens Guards' in s or '렌즈가드' in s:
@@ -42,8 +47,9 @@ def clean_product_name(val):
             qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
             if qty_match:
                 qty = int(qty_match.group(1))
-        if qty > 1: return f"렌즈보호커버[{qty}]"
-        else: return "렌즈보호커버"
+        res = f"렌즈보호커버[{qty}]" if qty > 1 else "렌즈보호커버"
+        if has_film: res += " +필름"
+        return res
 
     # 0-2. 태블릿 송풍구 거치대 상품 처리
     if ('송풍구' in s or '차량용' in s) and ('거치대' in s or '태블릿' in s):
@@ -54,8 +60,9 @@ def clean_product_name(val):
             qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
             if qty_match:
                 qty = int(qty_match.group(1))
-        if qty > 1: return f"태블릿 송풍구 거치대[{qty}]"
-        else: return "태블릿 송풍구 거치대"
+        res = f"태블릿 송풍구 거치대[{qty}]" if qty > 1 else "태블릿 송풍구 거치대"
+        if has_film: res += " +필름"
+        return res
 
     # 0-3. 태블릿 모니터 2단 거치대 처리 ('모니터'와 '2단' 두 단어가 모두 포함될 때만)
     if '모니터' in s and '2단' in s:
@@ -66,10 +73,9 @@ def clean_product_name(val):
             qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
             if qty_match:
                 qty = int(qty_match.group(1))
-        if qty > 1:
-            return f"태블릿 모니터 2단 거치대[{qty}]"
-        else:
-            return "태블릿 모니터 2단 거치대"
+        res = f"태블릿 모니터 2단 거치대[{qty}]" if qty > 1 else "태블릿 모니터 2단 거치대"
+        if has_film: res += " +필름"
+        return res
     
     # 1. 케이블 상품 정제 규칙 (m 및 cm 단위 모두 인식)
     if '케이블' in s:
@@ -97,10 +103,9 @@ def clean_product_name(val):
             components.append(length_str)
             
         target = " ".join(components)
-        if qty > 1:
-            return f"{target}[{qty}]"
-        else:
-            return target
+        res = f"{target}[{qty}]" if qty > 1 else target
+        if has_film: res += " +필름"
+        return res
 
     # 2. S10플러스 / 975 등 모델 단독 표기 상품 처리 ('케이스' 글자가 없어도 인식)
     if 'S10플러스' in s or '975' in s or 'G975' in s:
@@ -111,12 +116,15 @@ def clean_product_name(val):
             qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
             if qty_match:
                 qty = int(qty_match.group(1))
-        if qty > 1: return f"S10플러스[{qty}]"
-        else: return "S10플러스"
+        res = f"S10플러스[{qty}]" if qty > 1 else "S10플러스"
+        if has_film: res += " +필름"
+        return res
 
     # 3. 케이스 상품 정제 규칙 ('케이스' 글자가 포함된 경우)
     if '케이스' not in s:
-        return s
+        res = s
+        if has_film: res += " +필름"
+        return res
     
     qty = 1
     if '☞' in s:
@@ -138,14 +146,11 @@ def clean_product_name(val):
         if ',' in target:
             target = target.split(',')[0].strip()
     else:
-        # 마지막 슬래시(/ 또는 //) 앞의 상품명은 전부 지우고 뒤쪽 내용만 추출
         sub_parts = re.split(r'[/]{1,2}', base)
         target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
         
-    # 괄호 내용(우편함배송 등) 제거
     target = re.sub(r'\([^)]*\)', '', target).strip()
     
-    # 특정 모델명 간소화 규칙 적용
     if 'S10플러스' in target or '975' in target:
         target = 'S10플러스'
     elif '와이드6' in target and 'A13' in target:
@@ -155,7 +160,6 @@ def clean_product_name(val):
     elif 'S10' in target and ('973' in target or '기본' in target):
         target = 'S10'
     
-    # 요청하신 단어들 삭제 ('케이스', '풀액정', '2장', '클리어', '투명', '갤럭시')
     target = re.sub(r'케이스', '', target)
     target = re.sub(r'풀액정', '', target)
     target = re.sub(r'2장', '', target)
@@ -164,15 +168,13 @@ def clean_product_name(val):
     target = re.sub(r'갤럭시', '', target)
     target = ' '.join(target.split())
     
-    # 수량이 2개 이상일 때 모델명 뒤에 [수량] 표기 (예: 노트20[2])
-    if qty > 1:
-        result_str = f"{target}[{qty}]"
-    else:
-        result_str = target
-        
-    # '택배배송' 또는 '택배' 글자가 포함된 경우 맨 뒤에 ' 택배' 표기 추가
+    result_str = f"{target}[{qty}]" if qty > 1 else target
+    
     if '택배' in s:
         result_str = f"{result_str} 택배"
+        
+    if has_film:
+        result_str = f"{result_str} +필름"
         
     return result_str
 
@@ -201,7 +203,7 @@ def remove_duplicate_words(addr_str):
     # 아파트 동 번호 뒤에 숫자가 있고 '호'가 없는 경우 '호' 표기 추가
     addr_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', addr_str)
 
-    # 건물 동 이름(가,나,다,라,마,바,사,아,자,차,카,타,파,하 및 알파벳) 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가 (법정동 보호)
+    # 건물 동 이름 뒤에 숫자가 있고 '호'가 없는 경우 '호' 자동 추가
     addr_str = re.sub(r'\b([가나다라마바사아자차카타파하A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
 
     words = addr_str.split()
@@ -213,7 +215,7 @@ def remove_duplicate_words(addr_str):
             
     return ' '.join(clean_words)
 
-# --- [ 만능 주소 변환 엔진 ] ---
+# --- [ 만능 주소 변환 엔진 (행정개편 자동 대응 포함) ] ---
 def master_juso_converter(keyword):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -233,14 +235,12 @@ def master_juso_converter(keyword):
         kw_str = kw_str.replace(note, '').strip()
     kw_str = re.sub(r'\s*\.\s*', ' ', kw_str).strip()
     
-    # 0-1. 행정구역 띄어쓰기 사전 전처리
+    # 0-1. 행정구역 띄어쓰기 및 개편 대응 사전 전처리
     kw_str = re.sub(r'남동\s+구', '남동구', kw_str)
     kw_str = re.sub(r'서\s+구', '서구', kw_str)
-    
-    # [행정구역 개편 대응] 충북 음성군 대소면 -> 대소읍 자동 변환
     kw_str = kw_str.replace('대소면', '대소읍')
 
-    # [규칙 1] 특정 예외 주소 강제 매핑 체크 (남산타운, 불로동 268-2 등)
+    # [규칙 1] 특정 예외 주소 강제 매핑 체크 (남산타운, 불로동 풍경채 등)
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
             extra_part = kw_str
@@ -267,22 +267,21 @@ def master_juso_converter(keyword):
                 
             return remove_duplicate_words(final_res)
 
-    # [규칙 2] 인천 서구 불로동 -> 검단구 불로동 강제 매핑
+    # [규칙 2] 인천 서구 불로동 -> 검단구 자동 매핑
     if '불로동' in kw_str:
         kw_str = kw_str.replace('서구', '검단구').replace('서해구', '검단구')
         if '인천광역시 검단구' not in kw_str and '인천 검단구' not in kw_str:
             kw_str = re.sub(r'인천광역시\s+서구', '인천광역시 검단구', kw_str)
             kw_str = re.sub(r'인천\s+서구', '인천 검단구', kw_str)
 
-    # 1. 상세 부가정보(건물 동, 호수, 층수, 괄호 내용 등) 추출 및 원본에서 분리 (법정동 보호)
+    # 1. 상세 부가정보(건물 동, 호수, 층수, 괄호 내용 등) 추출 및 원본에서 분리
     extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]+동\d+|\d+호|\d+층|B\d+호|관리실|택배보관함|물리치료실|\([^)]+\)|[가-힣]+(?:의원|병원|한의원|이비인후과|내과|외과|치과|소아과|센터))'
     extra_details = re.findall(extra_pattern, kw_str)
     
-    # 검색용 쿼리 생성 시 상세 부가정보 일시 제거
     search_q_str = re.sub(extra_pattern, '', kw_str)
     search_q_str = ' '.join(search_q_str.split())
 
-    # 2. 건물명 뒤에 있는 하이픈 형태(예: '103-401')를 '103동 104호'로 안전하게 변환
+    # 2. 건물명 뒤에 있는 하이픈 형태(예: '103-401') 변환
     tokens_init = search_q_str.split()
     processed_tokens = []
     for i, t in enumerate(tokens_init):
@@ -365,7 +364,6 @@ def master_juso_converter(keyword):
                 if juso_list:
                     selected_juso = None
                     
-                    # [2차 / 2단지 우선 매칭 규칙 적용]
                     if has_2cha:
                         for juso in juso_list:
                             bd_name = juso.get('bdNm', '').strip()
