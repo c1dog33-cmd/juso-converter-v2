@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (A20/A30 전용 규칙 및 기존 기능 통합) ] ---
+# --- [ 상품명 정제 함수 (모델+필름 옵션 및 기존 규칙 통합) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -38,7 +38,7 @@ def clean_product_name(val):
     if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
 
-    # 🚀 [특수 전용 규칙] A20/A30 복수 호환 케이스 상품 전용 처리 (딱 'A20/A30'만 출력)
+    # 🚀 [특수 전용 규칙 1] A20/A30 복수 호환 케이스 상품 전용 처리
     if 'A20/A30' in s or ('A20' in s and 'A30' in s and '와이드4' in s):
         qty = 1
         if '☞' in s:
@@ -50,6 +50,26 @@ def clean_product_name(val):
         res = f"A20/A30[{qty}]" if qty > 1 else "A20/A30"
         if '택배' in s: res += " 택배"
         return res
+
+    # 🚀 [특수 전용 규칙 2] 모델 + 필름 옵션 상품 처리 (예: A90+풀액정필름2장 -> A90+필름)
+    if '/' in s and '☞' in s:
+        parts = s.split('☞')[0].split('/')
+        target_p = ""
+        for p in parts:
+            if '+' in p and ('필름' in p or '강화유리' in p):
+                target_p = p.strip()
+                break
+        if target_p:
+            model_part = target_p.split('+')[0].strip()
+            qty = 1
+            after_arrow = s.split('☞')[1].strip()
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after_arrow, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+            base = f"{model_part}+필름"
+            res = f"{base}[{qty}]" if qty > 1 else base
+            if '택배' in s: res += " 택배"
+            return res
 
     # 0-0-1. [최우선] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
     if '색상선택:' in s or '옵션선택:' in s:
