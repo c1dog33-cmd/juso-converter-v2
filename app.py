@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (우선순위 충돌 해결 반영) ] ---
+# --- [ 상품명 정제 함수 (스마트폰 모델명 최우선 절대 순위 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -38,7 +38,33 @@ def clean_product_name(val):
     if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
 
-    # 0-0-1. [최우선] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
+    # 🚀 [절대 최우선 순위] 갤럭시 및 LG 스마트폰 모델명(V50S, V50, 노트, S시리즈 등)을 무조건 먼저 탐지
+    smartphone_match = re.search(r'(노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
+    if smartphone_match:
+        raw_model = smartphone_match.group(1).replace(" ", "").upper()
+        if raw_model in ['N960', 'SM-N960']:
+            target_model = '노트9'
+        elif raw_model == 'V50S':
+            target_model = 'V50S'
+        elif raw_model == 'V50':
+            target_model = 'V50'
+        else:
+            target_model = raw_model
+
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        
+        res = f"{target_model}[{qty}]" if qty > 1 else target_model
+        if has_film: res += " +필름"
+        if '택배' in s: res += " 택배"
+        return res
+
+    # 0-0-2. [옵션 상품] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
     if '색상선택:' in s or '옵션선택:' in s:
         qty = 1
         if '☞' in s:
@@ -57,7 +83,7 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 0-0-2. [사이드미러 빗물가드 커버 옵션 정제 규칙] 컬러커버, 클리어커버 전용 처리
+    # 0-0-3. [사이드미러 빗물가드 커버 옵션] 컬러커버, 클리어커버 전용 처리
     if '사이드미러' in s or '클리어커버' in s or '컬러커버' in s:
         if '클리어커버' in s:
             target = '클리어커버'
@@ -77,28 +103,6 @@ def clean_product_name(val):
                 qty = int(m_ea.group(1))
                 
         res = f"{target}[{qty}]" if qty > 1 else target
-        if '택배' in s: res += " 택배"
-        return res
-
-    # 0-0. [범용 스마트 탐지] 상품명 어디에 있든 갤럭시 모델명(S, 노트, A, Z, 와이드 등)을 자동 추출
-    galaxy_model_match = re.search(r'(노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\d+)', s, re.IGNORECASE)
-    if galaxy_model_match:
-        raw_model = galaxy_model_match.group(1).replace(" ", "").upper()
-        if raw_model in ['N960', 'SM-N960']:
-            target_model = '노트9'
-        else:
-            target_model = raw_model
-
-        qty = 1
-        if '☞' in s:
-            parts = s.split('☞')
-            after = parts[1].strip() if len(parts) > 1 else ""
-            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
-            if qty_match:
-                qty = int(qty_match.group(1))
-        
-        res = f"{target_model}[{qty}]" if qty > 1 else target_model
-        if has_film: res += " +필름"
         if '택배' in s: res += " 택배"
         return res
     
@@ -128,7 +132,7 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
 
-    # 0-3. 태블릿 모니터 2단 거치대 처리 ('모니터'와 '2단' 두 단어가 모두 포함될 때만)
+    # 0-3. 태블릿 모니터 2단 거치대 처리
     if '모니터' in s and '2단' in s:
         qty = 1
         if '☞' in s:
@@ -141,7 +145,7 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
     
-    # 1. 케이블 상품 정제 규칙 (m 및 cm 단위 모두 인식)
+    # 1. 케이블 상품 정제 규칙
     if '케이블' in s:
         qty = 1
         if '☞' in s:
@@ -157,21 +161,17 @@ def clean_product_name(val):
         length_str = m_match.group(1) if m_match else ""
         
         components = []
-        if has_g:
-            components.append('ㄱ자형')
-        if has_c_type:
-            components.append('C타입 케이블')
-        else:
-            components.append('케이블')
-        if length_str:
-            components.append(length_str)
+        if has_g: components.append('ㄱ자형')
+        if has_c_type: components.append('C타입 케이블')
+        else: components.append('케이블')
+        if length_str: components.append(length_str)
             
         target = " ".join(components)
         res = f"{target}[{qty}]" if qty > 1 else target
         if has_film: res += " +필름"
         return res
 
-    # 2. 기타 케이스 상품 정제 규칙 ('케이스' 글자가 포함된 경우)
+    # 2. 기타 케이스 상품 정제 규칙
     if '케이스' not in s:
         res = s
         if has_film: res += " +필름"
@@ -191,10 +191,8 @@ def clean_product_name(val):
     if '모델선택:' in base:
         parts = base.split('모델선택:')
         target = parts[-1].strip()
-        if '/' in target:
-            target = target.split('/')[0].strip()
-        if ',' in target:
-            target = target.split(',')[0].strip()
+        if '/' in target: target = target.split('/')[0].strip()
+        if ',' in target: target = target.split(',')[0].strip()
     else:
         sub_parts = re.split(r'[/]{1,2}', base)
         target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
@@ -210,12 +208,8 @@ def clean_product_name(val):
     target = ' '.join(target.split())
     
     result_str = f"{target}[{qty}]" if qty > 1 else target
-    
-    if '택배' in s:
-        result_str = f"{result_str} 택배"
-        
-    if has_film:
-        result_str = f"{result_str} +필름"
+    if '택배' in s: result_str = f"{result_str} 택배"
+    if has_film: result_str = f"{result_str} +필름"
         
     return result_str
 
