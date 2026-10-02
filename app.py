@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (범용 갤럭시 모델 자동 탐지 및 필름 옵션 엄격 판별) ] ---
+# --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -38,11 +38,52 @@ def clean_product_name(val):
     if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
 
+    # 0-0-2. [사이드미러 빗물가드 커버 옵션 정제 규칙] 컬러커버, 클리어커버 전용 처리
+    if '사이드미러' in s or '클리어커버' in s or '컬러커버' in s:
+        if '클리어커버' in s:
+            target = '클리어커버'
+        elif '컬러커버' in s:
+            target = '컬러커버'
+        else:
+            target = '사이드미러가드'
+            
+        last_part = s.split('/')[-1] if '/' in s else s
+        qty = 1
+        m_gae = re.search(r'(\d+)\s*개', last_part)
+        if m_gae:
+            qty = int(m_gae.group(1))
+        else:
+            m_ea = re.search(r'☞\s*(\d+)', last_part)
+            if m_ea:
+                qty = int(m_ea.group(1))
+                
+        res = f"{target}[{qty}]" if qty > 1 else target
+        if '택배' in s: res += " 택배"
+        return res
+
+    # 0-0-1. [옵션 상품 정제 규칙] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
+    if '색상선택:' in s or '옵션선택:' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+        
+        opt_key = '색상선택:' if '색상선택:' in s else '옵션선택:'
+        sub_part = s.split(opt_key)[1].strip()
+        opt_val = re.split(r'[/,☞]', sub_part)[0].strip()
+        opt_val = re.sub(r'\d+[개EA]*$', '', opt_val).strip()
+        
+        res = f"{opt_val}[{qty}]" if qty > 1 else opt_val
+        if '택배' in s: res += " 택배"
+        return res
+
     # 0-0. [범용 스마트 탐지] 상품명 어디에 있든 갤럭시 모델명(S, 노트, A, Z, 와이드 등)을 자동 추출
     galaxy_model_match = re.search(r'(노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\d+)', s, re.IGNORECASE)
     if galaxy_model_match:
         raw_model = galaxy_model_match.group(1).replace(" ", "").upper()
-        # N960 등 모델 번호가 잡히면 노트9로 표준화
         if raw_model in ['N960', 'SM-N960']:
             target_model = '노트9'
         else:
