@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (슬래시 뒤 옵션 영역 우선 스캔 및 기존 규칙 통합) ] ---
+# --- [ 상품명 정제 함수 (케이블 길이 후위 옵션 우선 탐지 및 기존 규칙 통합) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -198,7 +198,7 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
     
-    # 1. 케이블 상품 정제 규칙
+    # 1. 케이블 상품 정제 규칙 (마지막 세그먼트/옵션 영역 길이 우선 탐지 반영)
     if '케이블' in s:
         qty = 1
         if '☞' in s:
@@ -210,7 +210,13 @@ def clean_product_name(val):
                 
         has_g = 'ㄱ자' in s or 'ㄱ 자' in s
         has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
-        m_match = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', s, re.IGNORECASE)
+        
+        # 🚀 [개선] 마지막 슬래시 뒤쪽(옵션 영역)에서 길이를 우선 탐지
+        last_segment = s.split('/')[-1] if '/' in s else s
+        m_match = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', last_segment, re.IGNORECASE)
+        if not m_match:
+            m_match = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', s, re.IGNORECASE)
+            
         length_str = m_match.group(1) if m_match else ""
         
         components = []
@@ -328,8 +334,8 @@ def master_juso_converter(keyword):
             hos = []
             for d in found_details:
                 for tok in d.split():
-                    if re.search(r'\d+호$|호$', tok) or tok.endswith('호'): hos.append(tok)
-                    elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
+                    if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호'): hos.append(tok)
+                    elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
                     else: building_names.append(tok)
             
             ordered_details = building_names + dongs + hos
@@ -521,9 +527,9 @@ def master_juso_converter(keyword):
             flat_tokens.append(t)
 
     for tok in flat_tokens:
-        if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+        if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
             hos.append(tok)
-        elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
+        elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'):
             dongs.append(tok)
         else:
             building_names.append(tok)
@@ -564,78 +570,4 @@ def master_juso_converter(keyword):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정")
-st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
-
-uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
-
-if uploaded_file is not None:
-    df = pd.read_excel(uploaded_file)
-    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
-    st.dataframe(df.head())
-
-    if st.button("🚀 주소 변환 및 서식 적용 시작"):
-        with st.spinner("주소를 변환하고 상품명을 정리하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
-            if '우편번호' in df.columns:
-                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
-
-            if '선택정보' in df.columns:
-                df['선택정보'] = df['선택정보'].apply(clean_product_name)
-
-            if '배송지' in df.columns:
-                progress_bar = st.progress(0)
-                total = len(df)
-                
-                converted_addrs = []
-                for i, row in df.iterrows():
-                    res = master_juso_converter(row['배송지'])
-                    converted_addrs.append(res)
-                    progress_bar.progress((i + 1) / total)
-                    
-                df['배송지'] = converted_addrs
-            else:
-                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
-
-            target_columns = ['수취인명', '전화', '우편번호', '배송지', '선택정보', '기타', '구분']
-            if len(df.columns) == len(target_columns):
-                df.columns = target_columns
-
-            for col in df.columns:
-                df[col] = df[col].apply(remove_illegal_chars)
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False)
-                worksheet = writer.sheets['Sheet1']
-                
-                for col in worksheet.columns:
-                    max_len = 0
-                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                    for cell in col:
-                        val = str(cell.value or '')
-                        length = sum(2 if ord(char) > 127 else 1 for char in val)
-                        if length > max_len:
-                            max_len = length
-                    adjusted_width = max(max_len + 4, 12)
-                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
-
-                font_size_8 = Font(size=8)
-                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
-                    worksheet.row_dimensions[row[0].row].height = 18
-                    for cell in row:
-                        cell.font = font_size_8
-                        
-                if '우편번호' in df.columns:
-                    zip_col_idx = df.columns.get_loc('우편번호') + 1
-                    for row in range(2, worksheet.max_row + 1):
-                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
-
-            excel_data = output.getvalue()
-
-        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
-        
-        st.download_button(
-            label="📥 변환된 엑셀 파일 다운로드",
-            data=excel_data,
-            file_name="우편배송_변환결과.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+st.write("엑셀 파일을 업로드하면 도로명 주
