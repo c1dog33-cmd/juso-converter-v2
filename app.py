@@ -33,12 +33,10 @@ def clean_product_name(val):
         return val
     s = str(val).strip()
     
-    # 추가 액정필름 선택 여부 감지 ('필요없음'이 포함된 경우 제외)
     has_film = False
     if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
 
-    # 🚀 [특수 전용 규칙 1] A20/A30 복수 호환 케이스 상품 전용 처리
     if 'A20/A30' in s or ('A20' in s and 'A30' in s and '와이드4' in s):
         qty = 1
         if '☞' in s:
@@ -51,7 +49,6 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 🚀 [특수 전용 규칙 2] 모델 + 필름 옵션 상품 처리 (예: A90+풀액정필름2장 -> A90+필름)
     if '/' in s and '☞' in s:
         parts = s.split('☞')[0].split('/')
         target_p = ""
@@ -71,7 +68,6 @@ def clean_product_name(val):
             if '택배' in s: res += " 택배"
             return res
 
-    # 🚀 [우선 탐지] 슬래시('/') 뒤쪽(옵션 영역)을 먼저 스캔하여 S10 5G 등 실제 선택 모델 추출
     if '/' in s:
         slash_parts = s.split('/')
         for p in reversed(slash_parts):
@@ -94,7 +90,6 @@ def clean_product_name(val):
                 if '택배' in s: res += " 택배"
                 return res
 
-    # 0-0-1. [최우선] 색상선택 또는 옵션선택이 포함된 경우 (컬러가드 등)
     if '색상선택:' in s or '옵션선택:' in s:
         qty = 1
         if '☞' in s:
@@ -113,7 +108,6 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 0-0-2. [사이드미러 빗물가드 커버 옵션] 컬러커버, 클리어커버 전용 처리
     if '사이드미러' in s or '클리어커버' in s or '컬러커버' in s:
         if '클리어커버' in s:
             target = '클리어커버'
@@ -136,7 +130,6 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 0-0. [범용 스마트 탐지] 갤럭시 및 LG 스마트폰 모델명 자동 추출
     smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
@@ -159,7 +152,6 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
     
-    # 0-1. 렌즈보호커버 상품 정제 규칙
     if '렌즈' in s or 'Lens Guards' in s or '렌즈가드' in s:
         qty = 1
         if '☞' in s:
@@ -172,7 +164,6 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
 
-    # 0-2. 태블릿 송풍구 거치대 상품 처리
     if ('송풍구' in s or '차량용' in s) and ('거치대' in s or '태블릿' in s):
         qty = 1
         if '☞' in s:
@@ -185,7 +176,6 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
 
-    # 0-3. 태블릿 모니터 2단 거치대 처리
     if '모니터' in s and '2단' in s:
         qty = 1
         if '☞' in s:
@@ -198,7 +188,6 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
     
-    # 1. 케이블 상품 정제 규칙 (마지막 세그먼트/옵션 영역 길이 우선 탐지 반영)
     if '케이블' in s:
         qty = 1
         if '☞' in s:
@@ -211,7 +200,6 @@ def clean_product_name(val):
         has_g = 'ㄱ자' in s or 'ㄱ 자' in s
         has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
         
-        # 🚀 [개선] 마지막 슬래시 뒤쪽(옵션 영역)에서 길이를 우선 탐지
         last_segment = s.split('/')[-1] if '/' in s else s
         m_match = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', last_segment, re.IGNORECASE)
         if not m_match:
@@ -230,7 +218,6 @@ def clean_product_name(val):
         if has_film: res += " +필름"
         return res
 
-    # 2. 기타 케이스 상품 정제 규칙
     if '케이스' not in s:
         res = s
         if has_film: res += " +필름"
@@ -299,8 +286,8 @@ def remove_duplicate_words(addr_str):
             
     return ' '.join(clean_words)
 
-# --- [ 만능 주소 변환 엔진 (행정개편 자동 대응 포함) ] ---
-def master_juso_converter(keyword):
+# --- [ 만능 주소 변환 엔진 (우편번호 검증 안전장치 포함) ] ---
+def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
@@ -419,6 +406,7 @@ def master_juso_converter(keyword):
 
     base_road_addr = ""
     api_bd_nm = ""
+    api_zip_no = ""
     is_user_sangga = '상가' in kw_str
     has_2cha = '2차' in kw_str or '2단지' in kw_str
     
@@ -462,6 +450,7 @@ def master_juso_converter(keyword):
 
                     base_road_addr = selected_juso.get('roadAddr')
                     api_bd_nm = selected_juso.get('bdNm', '')
+                    api_zip_no = selected_juso.get('zipNo', '')
 
                     if base_road_addr:
                         break
@@ -469,6 +458,14 @@ def master_juso_converter(keyword):
             continue
 
     if not base_road_addr:
+        full_fallback = kw_str
+        if delivery_notes:
+            cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
+            full_fallback = f"{full_fallback} ({cleaned_notes})"
+        return remove_duplicate_words(full_fallback)
+
+    # 🛡️ [우편번호 검증 안전장치] 원본 우편번호와 API 우편번호가 다르면 변환 거부 후 원본 반환
+    if original_zip and api_zip_no and original_zip != api_zip_no:
         full_fallback = kw_str
         if delivery_notes:
             cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
@@ -581,6 +578,7 @@ if uploaded_file is not None:
 
     if st.button("🚀 주소 변환 및 서식 적용 시작"):
         with st.spinner("주소를 변환하고 상품명을 정리하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
+            # 우편번호 정제
             if '우편번호' in df.columns:
                 df['우편번호'] = df['우편번호'].apply(fix_zipcode)
 
@@ -593,7 +591,9 @@ if uploaded_file is not None:
                 
                 converted_addrs = []
                 for i, row in df.iterrows():
-                    res = master_juso_converter(row['배송지'])
+                    # 엑셀의 원본 우편번호 값을 함께 전달하여 API 결과와 비교 검증
+                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
+                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
                     converted_addrs.append(res)
                     progress_bar.progress((i + 1) / total)
                     
