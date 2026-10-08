@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (노트20울트라 우선순위 및 케이블 길이 후위 탐지 반영) ] ---
+# --- [ 상품명 정제 함수 (S25엣지 등 신규 수식어 및 노트20울트라 우선순위 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -68,11 +68,11 @@ def clean_product_name(val):
             if '택배' in s: res += " 택배"
             return res
 
-    # 🚀 [우선 탐지] 슬래시('/') 뒤쪽(옵션 영역) 스캔 (노트20울트라 등 긴 기종 최우선 배치)
+    # 🚀 [우선 탐지] 슬래시('/') 뒤쪽(옵션 영역) 스캔 (S25엣지, 노트20울트라 등 반영)
     if '/' in s:
         slash_parts = s.split('/')
         for p in reversed(slash_parts):
-            m = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50)', p, re.IGNORECASE)
+            m = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50)', p, re.IGNORECASE)
             if m:
                 raw_model = m.group(1).replace(" ", "").upper()
                 if raw_model == 'S105G': target_model = 'S10 5G'
@@ -132,8 +132,8 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 🚀 [범용 스마트 탐지] 노트20울트라 등 긴 모델명 최우선 배치
-    smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
+    # 🚀 [범용 스마트 탐지] S25엣지 등 수식어 확장 반영
+    smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
         if raw_model == 'S105G': target_model = 'S10 5G'
