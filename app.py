@@ -27,14 +27,14 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (S25엣지 등 신규 수식어 및 노트20울트라 우선순위 반영) ] ---
+# --- [ 상품명 정제 함수 (풀액정필름2장, S25엣지, 노트20울트라 우선순위 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
     s = str(val).strip()
     
     has_film = False
-    if '추가액정필름' in s and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
+    if ('풀액정필름2장' in s or '추가액정필름' in s) and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
 
     if 'A20/A30' in s or ('A20' in s and 'A30' in s and '와이드4' in s):
@@ -46,6 +46,7 @@ def clean_product_name(val):
             if qty_match:
                 qty = int(qty_match.group(1))
         res = f"A20/A30[{qty}]" if qty > 1 else "A20/A30"
+        if has_film: res += " +필름"
         if '택배' in s: res += " 택배"
         return res
 
@@ -107,6 +108,7 @@ def clean_product_name(val):
         opt_val = re.sub(r'\d+[개EA]*$', '', opt_val).strip()
         
         res = f"{opt_val}[{qty}]" if qty > 1 else opt_val
+        if has_film: res += " +필름"
         if '택배' in s: res += " 택배"
         return res
 
@@ -129,10 +131,11 @@ def clean_product_name(val):
                 qty = int(m_ea.group(1))
                 
         res = f"{target}[{qty}]" if qty > 1 else target
+        if has_film: res += " +필름"
         if '택배' in s: res += " 택배"
         return res
 
-    # 🚀 [범용 스마트 탐지] S25엣지 등 수식어 확장 반영
+    # 🚀 [범용 스마트 탐지] 풀액정필름2장 및 S25엣지 등 확장 반영
     smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
