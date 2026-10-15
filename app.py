@@ -329,8 +329,8 @@ def master_juso_converter(keyword, original_zip=""):
             hos = []
             for d in found_details:
                 for tok in d.split():
-                    if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호'): hos.append(tok)
-                    elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
+                    if re.search(r'\d+호$|호$', tok) or tok.endswith('호'): hos.append(tok)
+                    elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
                     else: building_names.append(tok)
             
             ordered_details = building_names + dongs + hos
@@ -531,9 +531,9 @@ def master_juso_converter(keyword, original_zip=""):
             flat_tokens.append(t)
 
     for tok in flat_tokens:
-        if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+        if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
             hos.append(tok)
-        elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'):
+        elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
             dongs.append(tok)
         else:
             building_names.append(tok)
@@ -582,6 +582,10 @@ if uploaded_file is not None:
     df = pd.read_excel(uploaded_file)
     st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
     st.dataframe(df.head())
+
+    # 🚀 [개선] 세션 상태를 활용하여 변환 완료 즉시 다운로드 버튼이 안정적으로 노출되도록 처리
+    if 'excel_data' not in st.session_state:
+        st.session_state.excel_data = None
 
     if st.button("🚀 주소 변환 및 서식 적용 시작"):
         with st.spinner("주소를 변환하고 상품명을 정리하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
@@ -639,3 +643,15 @@ if uploaded_file is not None:
                     zip_col_idx = df.columns.get_loc('우편번호') + 1
                     for row in range(2, worksheet.max_row + 1):
                         worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
+
+            st.session_state.excel_data = output.getvalue()
+        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
+
+    # 세션에 변환된 데이터가 있는 경우 다운로드 버튼을 항상 표시하여 클릭 즉시 다운로드 가능
+    if st.session_state.excel_data is not None:
+        st.download_button(
+            label="📥 변환된 엑셀 파일 다운로드",
+            data=st.session_state.excel_data,
+            file_name="우편배송_변환결과.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
