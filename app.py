@@ -335,8 +335,8 @@ def master_juso_converter(keyword, original_zip=""):
             hos = []
             for d in found_details:
                 for tok in d.split():
-                    if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호'): hos.append(tok)
-                    elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
+                    if re.search(r'\d+호$|호$', tok) or tok.endswith('호'): hos.append(tok)
+                    elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
                     else: building_names.append(tok)
             
             ordered_details = building_names + dongs + hos
@@ -537,9 +537,9 @@ def master_juso_converter(keyword, original_zip=""):
             flat_tokens.append(t)
 
     for tok in flat_tokens:
-        if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+        if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
             hos.append(tok)
-        elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'):
+        elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
             dongs.append(tok)
         else:
             building_names.append(tok)
@@ -568,3 +568,94 @@ def master_juso_converter(keyword, original_zip=""):
         full_result = f"{base_road_addr} {' '.join(final_details)}"
     else:
         full_result = base_road_addr
+
+    if delivery_notes:
+        cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
+        full_result = f"{full_result} ({cleaned_notes})"
+
+    return remove_duplicate_words(full_result)
+
+
+# --- [ Streamlit 웹 UI ] ---
+st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
+
+st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정")
+st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
+
+uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
+
+if uploaded_file is not None:
+    df = pd.read_excel(uploaded_file)
+    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
+    st.dataframe(df.head())
+
+    if 'excel_data' not in st.session_state:
+        st.session_state.excel_data = None
+
+    if st.button("🚀 주소 변환 및 서식 적용 시작"):
+        with st.spinner("주소를 변환하고 상품명을 정리하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
+            if '우편번호' in df.columns:
+                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
+
+            if '선택정보' in df.columns:
+                df['선택정보'] = df['선택정보'].apply(clean_product_name)
+
+            if '배송지' in df.columns:
+                progress_bar = st.progress(0)
+                total = len(df)
+                
+                converted_addrs = []
+                for i, row in df.iterrows():
+                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
+                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
+                    converted_addrs.append(res)
+                    progress_bar.progress((i + 1) / total)
+                    
+                df['배송지'] = converted_addrs
+            else:
+                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
+
+            target_columns = ['수취인명', '전화', '우편번호', '배송지', '선택정보', '기타', '구분']
+            if len(df.columns) == len(target_columns):
+                df.columns = target_columns
+
+            for col in df.columns:
+                df[col] = df[col].apply(remove_illegal_chars)
+
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False)
+                worksheet = writer.sheets['Sheet1']
+                
+                for col in worksheet.columns:
+                    max_len = 0
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    for cell in col:
+                        val = str(cell.value or '')
+                        length = sum(2 if ord(char) > 127 else 1 for char in val)
+                        if length > max_len:
+                            max_len = length
+                    adjusted_width = max(max_len + 4, 12)
+                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
+
+                font_size_8 = Font(size=8)
+                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
+                    worksheet.row_dimensions[row[0].row].height = 18
+                    for cell in row:
+                        cell.font = font_size_8
+                        
+                if '우편번호' in df.columns:
+                    zip_col_idx = df.columns.get_loc('우편번호') + 1
+                    for row in range(2, worksheet.max_row + 1):
+                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
+
+            st.session_state.excel_data = output.getvalue()
+        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
+
+    if st.session_state.excel_data is not None:
+        st.download_button(
+            label="📥 변환된 엑셀 파일 다운로드",
+            data=st.session_state.excel_data,
+            file_name="우편배송_변환결과.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
