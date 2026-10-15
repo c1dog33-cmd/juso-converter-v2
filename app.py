@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (풀액정필름2장, S25엣지, 노트20울트라 우선순위 반영) ] ---
+# --- [ 상품명 정제 함수 (케이블 후위 길이 탐지, 풀액정필름2장, S25엣지, 노트20울트라 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -207,6 +207,7 @@ def clean_product_name(val):
         has_g = 'ㄱ자' in s or 'ㄱ 자' in s
         has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
         
+        # 🚀 [케이블 길이 후위 탐지] 마지막 세그먼트(옵션 영역) 우선 스캔 후 전체 스캔
         last_segment = s.split('/')[-1] if '/' in s else s
         m_match = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', last_segment, re.IGNORECASE)
         if not m_match:
@@ -328,8 +329,8 @@ def master_juso_converter(keyword, original_zip=""):
             hos = []
             for d in found_details:
                 for tok in d.split():
-                    if re.search(r'\d+호$|호$', tok) or tok.endswith('호'): hos.append(tok)
-                    elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
+                    if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호'): hos.append(tok)
+                    elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
                     else: building_names.append(tok)
             
             ordered_details = building_names + dongs + hos
@@ -530,9 +531,9 @@ def master_juso_converter(keyword, original_zip=""):
             flat_tokens.append(t)
 
     for tok in flat_tokens:
-        if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+        if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
             hos.append(tok)
-        elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
+        elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'):
             dongs.append(tok)
         else:
             building_names.append(tok)
@@ -638,14 +639,3 @@ if uploaded_file is not None:
                     zip_col_idx = df.columns.get_loc('우편번호') + 1
                     for row in range(2, worksheet.max_row + 1):
                         worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
-
-            excel_data = output.getvalue()
-
-        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
-        
-        st.download_button(
-            label="📥 변환된 엑셀 파일 다운로드",
-            data=excel_data,
-            file_name="우편배송_변환결과.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
