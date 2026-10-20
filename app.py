@@ -27,7 +27,7 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (케이블 역순 길이 탐지, 풀액정필름2장, S25엣지, 노트20울트라 반영) ] ---
+# --- [ 상품명 정제 함수 (와이드5->A22 매핑, 케이블 역순 탐지, 풀액정필름2장, S25엣지, 노트20울트라 반영) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -80,6 +80,7 @@ def clean_product_name(val):
                 elif raw_model == 'S20플러스' or raw_model == 'S20+': target_model = 'S20플러스'
                 elif raw_model == '노트10플러스': target_model = '노트10플러스'
                 elif raw_model == '노트20울트라': target_model = '노트20울트라'
+                elif raw_model == '와이드5': target_model = 'A22'
                 else: target_model = raw_model
                 
                 qty = 1
@@ -106,6 +107,8 @@ def clean_product_name(val):
         sub_part = s.split(opt_key)[1].strip()
         opt_val = re.split(r'[/,☞]', sub_part)[0].strip()
         opt_val = re.sub(r'\d+[개EA]*$', '', opt_val).strip()
+        
+        if opt_val == '와이드5': opt_val = 'A22'
         
         res = f"{opt_val}[{qty}]" if qty > 1 else opt_val
         if has_film: res += " +필름"
@@ -135,7 +138,7 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 🚀 [범용 스마트 탐지] 풀액정필름2장 및 S25엣지 등 확장 반영
+    # 🚀 [범용 스마트 탐지] 와이드5 -> A22 매핑 및 풀액정필름2장, S25엣지 반영
     smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
@@ -144,6 +147,7 @@ def clean_product_name(val):
         elif raw_model == 'V50S': target_model = 'V50S'
         elif raw_model == 'V50': target_model = 'V50'
         elif raw_model == '노트20울트라': target_model = '노트20울트라'
+        elif raw_model == '와이드5': target_model = 'A22'
         else: target_model = raw_model
 
         qty = 1
@@ -207,7 +211,7 @@ def clean_product_name(val):
         has_g = 'ㄱ자' in s or 'ㄱ 자' in s
         has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
         
-        # 🚀 [케이블 길이 역순 탐지 강화] 슬래시 파트를 뒤에서부터 거꾸로 스캔하여 옵션 길이 최우선 추출
+        # 🚀 [케이블 길이 역순 탐지]
         length_str = ""
         if '/' in s:
             cable_parts = s.split('/')
@@ -266,6 +270,8 @@ def clean_product_name(val):
     target = re.sub(r'투명', '', target)
     target = re.sub(r'갤럭시', '', target)
     target = ' '.join(target.split())
+    
+    if target == '와이드5': target = 'A22'
     
     result_str = f"{target}[{qty}]" if qty > 1 else target
     if '택배' in s: result_str = f"{result_str} 택배"
