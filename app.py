@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-# 🚀 네이버 클라우드 플랫폼 API 인증 정보 적용 완료
+# 🚀 네이버 클라우드 플랫폼 API 인증 정보
 NAVER_CLIENT_ID = "bkwdzf72zn"
 NAVER_CLIENT_SECRET = "rbzw7TF0T8wDDFB4HqoZ4rNaq14zKDgc8W9ogQX6"
 
@@ -116,7 +116,7 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 네이버 Geocoding API 기반 주소 변환 엔진 ] ---
+# --- [ 네이버 공식 Geocoding API 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -141,8 +141,8 @@ def master_juso_converter(keyword, original_zip=""):
             base_road_addr = override_addr
             break
     else:
-        # 🚀 네이버 Geocoding API 호출
-        url = f"https://naveropenapi.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(search_q_str)}"
+        # 🚀 수정된 공식 네이버 Maps Geocoding API 엔드포인트 URL
+        url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(search_q_str)}"
         headers = {
             "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
             "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
