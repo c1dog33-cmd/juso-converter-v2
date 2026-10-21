@@ -144,23 +144,22 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 네이버 공식 Geocoding API 엔진 (아파트명 및 고객 메모 보존 적용) ] ---
+# --- [ 네이버 공식 Geocoding API 엔진 (아파트·빌리지명 보존 및 중복 괄호 필터링 적용) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    # 1. 원본 주소에서 아파트명 추출 (예: 강동리버스트4단지, 엘지아파트 등)
-    apt_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|타운|팰리스|주공|LH|단지))', kw_str)
+    # 1. 원본 주소에서 아파트·빌리지·빌라·오피스텔명 추출 (확장 패턴)
+    apt_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지))', kw_str)
     orig_apt = apt_match.group(1) if apt_match else ""
 
     # 2. 하이픈 동·호수 형식 변환
     kw_str_mod = re.sub(r'\b(\d+)-(\d{3,4})\b', r'\1동 \2호', kw_str)
     
-    # 3. 상세 동/호수, 층, 괄호 및 고객 메모·상가 이름 패턴 추출
-    # 배송메모 전까지 또는 상세 꼬리말 분리
-    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b\d+동|\b\d+호|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
+    # 3. 상세 동/호수, 층, 알파벳 동(B동 등), 생활관 및 상가/메모 패턴 추출
+    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b\d+동|\b\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
     extra_details = re.findall(extra_pattern, kw_str_mod)
     
     # 4. API 검색용 순수 검색어 추출
@@ -200,13 +199,17 @@ def master_juso_converter(keyword, original_zip=""):
     if not base_road_addr:
         return fix_dong_ho_spacing(kw_str)
 
-    # 6. 네이버 결과에 아파트명이 빠져 있으면 원본 아파트명 보존·추가
+    # 6. 네이버 결과에 아파트·빌리지명이 빠져 있으면 원본 이름 보존·추가
     if orig_apt and orig_apt not in base_road_addr:
         base_road_addr = f"{base_road_addr} {orig_apt}"
 
-    # 7. 상세 동·호수 및 고객 메모/상가명 결합
+    # 7. 상세 동·호수 및 고객 메모/상가명 결합 (중복 법정동 괄호 스마트 필터링 적용)
     for detail in extra_details:
         detail_clean = fix_dong_ho_spacing(detail.strip())
+        # 네이버 결과에 이미 포함되어 있거나 불필요한 법정동 중복 괄호인 경우 필터링
+        if detail_clean.startswith('(') and detail_clean.endswith(')'):
+            if any(sub in base_road_addr for sub in detail_clean.strip('()').split(',')):
+                continue
         if detail_clean and detail_clean not in base_road_addr:
             base_road_addr = f"{base_road_addr} {detail_clean}"
 
@@ -218,7 +221,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트명/상가명 보존 및 상품명 정리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트/빌리지명 보존, 중복 괄호 제거 및 상품명 정리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
