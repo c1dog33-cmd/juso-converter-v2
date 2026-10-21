@@ -7,7 +7,8 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-CONFIRM_KEY = "devU01TX0FVVEgyMDI2MDkzMDEwMTcwMDEyMDUzMjM="
+# 🚀 새로 발급받은 승인키 적용 (기존 키 삭제 완료)
+CONFIRM_KEY = "devU01TX0FVVEgyMDI2MTAyMTA5NTExMjEyMDc4OTQ="
 
 def fix_zipcode(val):
     if pd.isna(val) or val is None:
