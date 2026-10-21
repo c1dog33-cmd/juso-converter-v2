@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-# 발급받은 브이월드 API 키
+# 🚀 발급받은 브이월드 API 키 적용 완료
 VWORLD_API_KEY = "7F7E16A8-41A3-459F-8315-0C733BDBACBA"
 
 def fix_zipcode(val):
@@ -279,18 +279,6 @@ def clean_product_name(val):
 def remove_duplicate_words(addr_str):
     if not addr_str:
         return addr_str
-    addr_str = re.sub(r'남동\s+구', '남동구', addr_str)
-    addr_str = re.sub(r'서\s+구', '서구', addr_str)
-    addr_str = re.sub(r'간\s+석동', '간석동', addr_str)
-    addr_str = re.sub(r'가\s+능동', '가능동', addr_str)
-    addr_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', addr_str)
-    addr_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', addr_str)
-    addr_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', addr_str)
-    addr_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', addr_str)
-    addr_str = re.sub(r'동(\d)', r'동 \1', addr_str)
-    addr_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', addr_str)
-    addr_str = re.sub(r'\b([가나다라마바사아자차카타파하A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
-
     words = addr_str.split()
     clean_words = []
     for w in words:
@@ -299,75 +287,71 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 브이월드(V-World) API 기반 주소 변환 엔진 (파싱 보완) ] ---
+# --- [ 브이월드(V-World) API 기반 주소 변환 엔진 (고도화된 전처리 및 상세주소 보존) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    delivery_note_pattern = r'([가-힣\s]+(?:부탁드립니다?|놓아주세요?|전해주세요?|맡겨주세요?|보관해주세요?|부탁해요?))'
-    delivery_notes = re.findall(delivery_note_pattern, kw_str)
-    for note in delivery_notes:
-        kw_str = kw_str.replace(note, '').strip()
-    kw_str = re.sub(r'\s*\.\s*', ' ', kw_str).strip()
+    # 1. 하이픈으로 된 동·호수 형식 변환 (예: 115-2104 -> 115동 2104호)
+    kw_str_mod = re.sub(r'\b(\d+)-(\d{3,4})\b', r'\1동 \2호', kw_str)
+    
+    # 2. 상세 동/호수 및 괄호 정보 추출 패턴
+    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b\d+동|\b\d+호|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+층|\([^)]+\))'
+    extra_details = re.findall(extra_pattern, kw_str_mod)
+    
+    # 3. API 검색을 위한 순수 검색어 추출 (상세 동호수 및 괄호 제거)
+    search_q_str = kw_str_mod
+    for ext in extra_details:
+        search_q_str = search_q_str.replace(ext, '')
+    search_q_str = ' '.join(search_q_str.split())
 
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
-            return override_addr
-
-    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+호|\d+층|\([^)]+\))'
-    extra_details = re.findall(extra_pattern, kw_str)
-    
-    search_q_str = re.sub(extra_pattern, '', kw_str)
-    search_q_str = ' '.join(search_q_str.split())
-
-    # 국토교통부 브이월드 주소 검색 API 호출 URL (type=address 대신 일반 search 사용 및 파라미터 최적화)
-    url = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=address&category=road&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
-    
-    base_road_addr = ""
-    
-    try:
-        response = requests.get(url, timeout=5)
-        if response.status_code == 200:
-            res = response.json()
-            result_block = res.get('response', {})
-            if result_block.get('status') == 'OK':
-                items = result_block.get('result', {}).get('items', [])
-                if items:
-                    # 도로명 주소가 있으면 우선 사용, 없으면 parcel(지번) 사용
-                    addr_obj = items[0].get('address', {})
-                    base_road_addr = addr_obj.get('road', '') or addr_obj.get('parcel', '')
-                    
-                    # 만약 address 구조가 다른 형태일 경우 대비한 폴백
-                    if not base_road_addr:
-                        base_road_addr = items[0].get('title', '')
-    except Exception:
-        pass
-
-    if not base_road_addr:
-        # 브이월드 검색 실패 시 일반 통합검색 쿼리로 재시도
-        url_fallback = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=district&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
+            base_road_addr = override_addr
+            break
+    else:
+        # 국토교통부 브이월드 주소 검색 API 호출
+        url = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=address&category=road&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
+        
+        base_road_addr = ""
         try:
-            resp2 = requests.get(url_fallback, timeout=5)
-            if resp2.status_code == 200:
-                items2 = resp2.json().get('response', {}).get('result', {}).get('items', [])
-                if items2:
-                    base_road_addr = items2[0].get('title', '')
+            response = requests.get(url, timeout=5)
+            if response.status_code == 200:
+                res = response.json()
+                result_block = res.get('response', {})
+                if result_block.get('status') == 'OK':
+                    items = result_block.get('result', {}).get('items', [])
+                    if items:
+                        addr_obj = items[0].get('address', {})
+                        base_road_addr = addr_obj.get('road', '') or addr_obj.get('parcel', '')
+                        if not base_road_addr:
+                            base_road_addr = items[0].get('title', '')
         except Exception:
             pass
+
+        if not base_road_addr:
+            # 2차 폴백 검색 (district 타입)
+            url_fallback = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=district&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
+            try:
+                resp2 = requests.get(url_fallback, timeout=5)
+                if resp2.status_code == 200:
+                    items2 = resp2.json().get('response', {}).get('result', {}).get('items', [])
+                    if items2:
+                        base_road_addr = items2[0].get('title', '')
+            except Exception:
+                pass
 
     if not base_road_addr:
         return kw_str
 
-    # 상세 동/호수 및 배송메시지 결합
-    detail_str = " ".join(extra_details)
-    if detail_str and detail_str not in base_road_addr:
-        base_road_addr = f"{base_road_addr} {detail_str}"
-
-    if delivery_notes:
-        cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
-        base_road_addr = f"{base_road_addr} ({cleaned_notes})"
+    # 4. 추출해 두었던 상세 동·호수 및 괄호 정보를 신주소 뒤에 안전하게 결합
+    # 이미 도로명 주소에 포함된 상세정보는 중복 추가 방지
+    for detail in extra_details:
+        detail_clean = detail.strip()
+        if detail_clean and detail_clean not in base_road_addr:
+            base_road_addr = f"{base_road_addr} {detail_clean}"
 
     return remove_duplicate_words(base_road_addr)
 
