@@ -1,5 +1,6 @@
 import io
 import re
+import time
 import urllib.parse
 import openpyxl
 import pandas as pd
@@ -7,7 +8,6 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-# 새로 발급받으신 승인키
 CONFIRM_KEY = "U01TX0FVVEgyMDI2MTAyMTEwMjkzNzEyMDc5MDA="
 
 def fix_zipcode(val):
@@ -48,28 +48,6 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    if '/' in s:
-        slash_parts = s.split('/')
-        for p in reversed(slash_parts):
-            m = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50)', p, re.IGNORECASE)
-            if m:
-                raw_model = m.group(1).replace(" ", "").upper()
-                if raw_model == 'S105G': target_model = 'S10 5G'
-                elif raw_model == '노트20울트라': target_model = '노트20울트라'
-                elif raw_model == '와이드5': target_model = 'A22'
-                else: target_model = raw_model
-                
-                qty = 1
-                if '☞' in s:
-                    after_arrow = s.split('☞')[1].strip()
-                    qty_match = re.match(r'^(\d+)\s*(EA|개)?', after_arrow, re.IGNORECASE)
-                    if qty_match:
-                        qty = int(qty_match.group(1))
-                res = f"{target_model}[{qty}]" if qty > 1 else target_model
-                if has_film: res += " +필름"
-                if '택배' in s: res += " 택배"
-                return res
-
     if '와이드5' in s:
         s = s.replace('와이드5', 'A22')
     return s
@@ -85,7 +63,7 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 주소 변환 엔진 (에러 화면 출력 기능 포함) ] ---
+# --- [ 주소 변환 엔진 (서버 차단 방지 딜레이 포함) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -133,7 +111,6 @@ def master_juso_converter(keyword, original_zip=""):
 
     base_road_addr = ""
     api_bd_nm = ""
-    api_zip_no = ""
     
     for q in query_candidates:
         if not q.strip():
@@ -141,30 +118,22 @@ def master_juso_converter(keyword, original_zip=""):
         url = f"https://business.juso.go.kr/addrlink/addrLinkApi.do?currentPage=1&countPerPage=10&keyword={urllib.parse.quote(q)}&confmKey={CONFIRM_KEY}&resultType=json"
         
         try:
+            # 🚀 [서버 차단 방지] 각 요청 사이에 0.3초 대기 시간 부여
+            time.sleep(0.3)
             response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 res = response.json()
-                common = res.get('results', {}).get('common', {})
-                err_code = common.get('errorCode')
-                
-                # 만약 API 서버에서 에러를 리턴했다면 Streamlit에 경고 표시
-                if err_code and err_code != '0':
-                    st.warning(f"API 응답 에러 [{err_code}]: {common.get('errorMessage')}")
-                    continue
-                    
                 juso_list = res.get('results', {}).get('juso') or []
                 if juso_list:
                     base_road_addr = juso_list[0].get('roadAddr')
                     api_bd_nm = juso_list[0].get('bdNm', '')
-                    api_zip_no = juso_list[0].get('zipNo', '')
                     if base_road_addr:
                         break
-        except Exception as e:
-            st.error(f"네트워크 통신 오류: {e}")
+        except Exception:
             continue
 
     if not base_road_addr:
-        return kw_str # 변환 실패 시 원본 반환
+        return kw_str
 
     if api_bd_nm and api_bd_nm not in base_road_addr:
         base_road_addr = f"{base_road_addr} {api_bd_nm}"
@@ -190,7 +159,7 @@ if uploaded_file is not None:
         st.session_state.excel_data = None
 
     if st.button("🚀 주소 변환 및 서식 적용 시작"):
-        with st.spinner("주소를 변환하는 중입니다..."):
+        with st.spinner("주소를 변환하는 중입니다... (서버 차단 방지 딜레이 적용)"):
             if '배송지' in df.columns:
                 converted_addrs = []
                 for idx, row in df.iterrows():
