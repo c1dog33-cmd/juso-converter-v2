@@ -194,4 +194,242 @@ def clean_product_name(val):
             qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
             if qty_match:
                 qty = int(qty_match.group(1))
-        res = f"태블릿 모니터 2단 거치대[{qty}]" if qty > 1 else "태블릿 모니터 2단
+        res = f"태블릿 모니터 2단 거치대[{qty}]" if qty > 1 else "태블릿 모니터 2단 거치대"
+        if has_film: res += " +필름"
+        return res
+    
+    if '케이블' in s:
+        qty = 1
+        if '☞' in s:
+            parts = s.split('☞')
+            after = parts[1].strip() if len(parts) > 1 else ""
+            qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+            if qty_match:
+                qty = int(qty_match.group(1))
+                
+        has_g = 'ㄱ자' in s or 'ㄱ 자' in s
+        has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
+        
+        length_str = ""
+        if '/' in s:
+            cable_parts = s.split('/')
+            for p in reversed(cable_parts):
+                m_sub = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', p, re.IGNORECASE)
+                if m_sub:
+                    length_str = m_sub.group(1)
+                    break
+        if not length_str:
+            m_match = re.search(r'(\d+(?:\.\d+)?(?:m|cm))', s, re.IGNORECASE)
+            if m_match:
+                length_str = m_match.group(1)
+        
+        components = []
+        if has_g: components.append('ㄱ자형')
+        if has_c_type: components.append('C타입 케이블')
+        else: components.append('케이블')
+        if length_str: components.append(length_str)
+            
+        target = " ".join(components)
+        res = f"{target}[{qty}]" if qty > 1 else target
+        if has_film: res += " +필름"
+        return res
+
+    if '케이스' not in s:
+        res = s
+        if has_film: res += " +필름"
+        return res
+    
+    qty = 1
+    if '☞' in s:
+        parts = s.split('☞')
+        base = parts[0].strip()
+        after = parts[1].strip() if len(parts) > 1 else ""
+        qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
+        if qty_match:
+            qty = int(qty_match.group(1))
+    else:
+        base = s
+        
+    if '모델선택:' in base:
+        parts = base.split('모델선택:')
+        target = parts[-1].strip()
+        if '/' in target: target = target.split('/')[0].strip()
+        if ',' in target: target = target.split(',')[0].strip()
+    else:
+        sub_parts = re.split(r'[/]{1,2}', base)
+        target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
+        
+    target = re.sub(r'\([^)]*\)', '', target).strip()
+    target = re.sub(r'케이스', '', target)
+    target = re.sub(r'풀액정', '', target)
+    target = re.sub(r'2장', '', target)
+    target = re.sub(r'클리어', '', target)
+    target = re.sub(r'투명', '', target)
+    target = re.sub(r'갤럭시', '', target)
+    target = ' '.join(target.split())
+    
+    if target == '와이드5': target = 'A22'
+    
+    result_str = f"{target}[{qty}]" if qty > 1 else target
+    if '택배' in s: result_str = f"{result_str} 택배"
+    if has_film: result_str = f"{result_str} +필름"
+        
+    return result_str
+
+def remove_duplicate_words(addr_str):
+    if not addr_str:
+        return addr_str
+    addr_str = re.sub(r'남동\s+구', '남동구', addr_str)
+    addr_str = re.sub(r'서\s+구', '서구', addr_str)
+    addr_str = re.sub(r'간\s+석동', '간석동', addr_str)
+    addr_str = re.sub(r'가\s+능동', '가능동', addr_str)
+    addr_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', addr_str)
+    addr_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', addr_str)
+    addr_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', addr_str)
+    addr_str = re.sub(r'\b(\d+)\s+호\b', r'\1호', addr_str)
+    addr_str = re.sub(r'동(\d)', r'동 \1', addr_str)
+    addr_str = re.sub(r'\b(\d+동)\s+(\d+)(?!호)\b', r'\1 \2호', addr_str)
+    addr_str = re.sub(r'\b([가나다라마바사아자차카타파하A-Za-z]동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
+
+    words = addr_str.split()
+    clean_words = []
+    for w in words:
+        clean_w = w.strip('(),')
+        if not clean_words or clean_w != clean_words[-1].strip('(),'):
+            clean_words.append(w)
+    return ' '.join(clean_words)
+
+# --- [ 브이월드(V-World) API 기반 주소 변환 엔진 ] ---
+def master_juso_converter(keyword, original_zip=""):
+    if not keyword or pd.isna(keyword):
+        return keyword
+        
+    kw_str = str(keyword).strip()
+    
+    delivery_note_pattern = r'([가-힣\s]+(?:부탁드립니다?|놓아주세요?|전해주세요?|맡겨주세요?|보관해주세요?|부탁해요?))'
+    delivery_notes = re.findall(delivery_note_pattern, kw_str)
+    for note in delivery_notes:
+        kw_str = kw_str.replace(note, '').strip()
+    kw_str = re.sub(r'\s*\.\s*', ' ', kw_str).strip()
+
+    for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
+        if target_key in kw_str:
+            return override_addr
+
+    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+호|\d+층|\([^)]+\))'
+    extra_details = re.findall(extra_pattern, kw_str)
+    
+    search_q_str = re.sub(extra_pattern, '', kw_str)
+    search_q_str = ' '.join(search_q_str.split())
+
+    # 국토교통부 브이월드 주소 검색 API 호출 URL
+    url = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=10&page=1&type=address&category=road&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
+    
+    base_road_addr = ""
+    
+    try:
+        response = requests.get(url, timeout=5)
+        if response.status_code == 200:
+            res = response.json()
+            result_block = res.get('response', {})
+            if result_block.get('status') == 'OK':
+                items = result_block.get('result', {}).get('items', [])
+                if items:
+                    base_road_addr = items[0].get('address', {}).get('road', '') or items[0].get('address', {}).get('parcel', '')
+    except Exception:
+        pass
+
+    if not base_road_addr:
+        return kw_str
+
+    # 상세 동/호수 및 배송메시지 결합
+    detail_str = " ".join(extra_details)
+    if detail_str and detail_str not in base_road_addr:
+        base_road_addr = f"{base_road_addr} {detail_str}"
+
+    if delivery_notes:
+        cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
+        base_road_addr = f"{base_road_addr} ({cleaned_notes})"
+
+    return remove_duplicate_words(base_road_addr)
+
+
+# --- [ Streamlit 웹 UI ] ---
+st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
+
+st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (국토부 브이월드 연동)")
+st.write("엑셀 파일을 업로드하면 국토부 브이월드 오픈API를 통해 도로명 주소 변환 및 상품명 정리가 이루어집니다.")
+
+uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
+
+if uploaded_file is not None:
+    df = pd.read_excel(uploaded_file)
+    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
+    st.dataframe(df.head())
+
+    if 'excel_data' not in st.session_state:
+        st.session_state.excel_data = None
+
+    if st.button("🚀 주소 변환 및 서식 적용 시작"):
+        with st.spinner("주소를 변환하는 중입니다..."):
+            if '우편번호' in df.columns:
+                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
+
+            if '선택정보' in df.columns:
+                df['선택정보'] = df['선택정보'].apply(clean_product_name)
+
+            if '배송지' in df.columns:
+                progress_bar = st.progress(0)
+                total = len(df)
+                
+                converted_addrs = []
+                for i, row in df.iterrows():
+                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
+                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
+                    converted_addrs.append(res)
+                    progress_bar.progress((i + 1) / total)
+                    
+                df['배송지'] = converted_addrs
+            else:
+                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
+
+            for col in df.columns:
+                df[col] = df[col].apply(remove_illegal_chars)
+
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False)
+                worksheet = writer.sheets['Sheet1']
+                
+                for col in worksheet.columns:
+                    max_len = 0
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    for cell in col:
+                        val = str(cell.value or '')
+                        length = sum(2 if ord(char) > 127 else 1 for char in val)
+                        if length > max_len:
+                            max_len = length
+                    adjusted_width = max(max_len + 4, 12)
+                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
+
+                font_size_8 = Font(size=8)
+                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
+                    worksheet.row_dimensions[row[0].row].height = 18
+                    for cell in row:
+                        cell.font = font_size_8
+                        
+                if '우편번호' in df.columns:
+                    zip_col_idx = df.columns.get_loc('우편번호') + 1
+                    for row in range(2, worksheet.max_row + 1):
+                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
+
+            st.session_state.excel_data = output.getvalue()
+        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
+
+    if st.session_state.excel_data is not None:
+        st.download_button(
+            label="📥 변환된 엑셀 파일 다운로드",
+            data=st.session_state.excel_data,
+            file_name="우편배송_변환결과.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
