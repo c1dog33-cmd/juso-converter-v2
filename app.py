@@ -49,6 +49,23 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'(\d+동)(\d+호)', r'\1 \2', addr_str)
     return addr_str
 
+# --- [ 신주소 상세 정보(동·호수/층수) 맨 뒤로 정렬 함수 ] ---
+def reorder_dong_ho_to_end(addr_str):
+    if not addr_str:
+        return addr_str
+    # 동·호수, 층수 패턴 (예: 603동 903호, 302호, 2층 206호 등)
+    dong_ho_pattern = r'(\b\d+\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b\d+\s*층\s*\d+\s*호?|\b\d+\s*층|\b\d+\s*호)'
+    matches = re.findall(dong_ho_pattern, addr_str)
+    if not matches:
+        return addr_str
+        
+    clean_str = addr_str
+    for m in matches:
+        clean_str = clean_str.replace(m, '')
+        
+    clean_str = ' '.join(clean_str.split())
+    return clean_str + " " + " ".join(matches)
+
 # --- [ 완벽한 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
@@ -153,9 +170,9 @@ def master_juso_converter(keyword, original_zip=""):
     kw_str = str(keyword).strip()
     kw_str_pre = pre_process_address(kw_str)
     
-    # 1. 이미 신주소(도로명 주소)인 경우 변환 없이 원본 띄어쓰기만 정돈하여 반환
+    # 1. 이미 신주소(도로명 주소)인 경우 상세 정보(동·호수/층수)를 맨 뒤로 정렬하여 반환
     if is_new_road_address(kw_str_pre):
-        return kw_str_pre
+        return reorder_dong_ho_to_end(kw_str_pre)
 
     # 2. 건물·아파트·빌리지·고시원·프라자 이름 추출
     bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가))', kw_str_pre)
@@ -197,9 +214,9 @@ def master_juso_converter(keyword, original_zip=""):
         except Exception:
             pass
 
-    # 5. API 변환 실패 시(결과 없을 때) 원본 전처리 주소 그대로 유지
+    # 5. API 변환 실패 시(결과 없을 때) 원본 전처리 주소 그대로 유지 (동·호수 맨 뒤 정렬 적용)
     if not base_road_addr:
-        return kw_str_pre
+        return reorder_dong_ho_to_end(kw_str_pre)
 
     # 6. 네이버 결과에 건물명이 빠져 있으면 보존·추가
     if orig_bldg and orig_bldg not in base_road_addr:
