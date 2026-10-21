@@ -33,7 +33,6 @@ def remove_illegal_chars(val):
 def is_new_road_address(addr_str):
     if not addr_str:
         return False
-    # 도로명 패턴 ('로 O번길 O' 또는 '길 O' 등)이 포함되어 있으면 신주소로 판단
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
@@ -53,7 +52,6 @@ def pre_process_address(addr_str):
 def reorder_dong_ho_to_end(addr_str):
     if not addr_str:
         return addr_str
-    # 동·호수, 층수 패턴 (예: 603동 903호, 302호, 2층 206호 등)
     dong_ho_pattern = r'(\b\d+\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b\d+\s*층\s*\d+\s*호?|\b\d+\s*층|\b\d+\s*호)'
     matches = re.findall(dong_ho_pattern, addr_str)
     if not matches:
@@ -170,7 +168,7 @@ def master_juso_converter(keyword, original_zip=""):
     kw_str = str(keyword).strip()
     kw_str_pre = pre_process_address(kw_str)
     
-    # 1. 이미 신주소(도로명 주소)인 경우 상세 정보(동·호수/층수)를 맨 뒤로 정렬하여 반환
+    # 1. 이미 신주소(도로명 주소)인 경우 상세 정보 맨 뒤로 정렬하여 반환
     if is_new_road_address(kw_str_pre):
         return reorder_dong_ho_to_end(kw_str_pre)
 
@@ -178,16 +176,20 @@ def master_juso_converter(keyword, original_zip=""):
     bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가))', kw_str_pre)
     orig_bldg = bldg_match.group(1) if bldg_match else ""
 
-    # 3. 상세 동/호수, 층, 괄호 및 상호명 패턴 추출
-    extra_pattern = r'(?:\b\d+\s*동\s*\d+\s*호?|\b\d+\s*동|\b\d+\s*호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
+    # 3. 상세 동/호수, 층, 괄호 및 상호명 패턴 추출 (하이픈 지번 오인식 방지 패턴 적용)
+    extra_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
     extra_details = re.findall(extra_pattern, kw_str_pre)
     
-    # 4. API 검색용 순수 검색어 추출 (더미 '0' 등 제거)
-    search_q_str = kw_str_pre
+    # 4. API 검색용 스마트 쿼리 구성 (지번 오류 방지를 위해 건물명 필수 조합)
+    temp_query_str = kw_str_pre
     for ext in extra_details:
-        search_q_str = search_q_str.replace(ext, '')
-    search_q_str = re.sub(r'\s+0\b', '', search_q_str)
-    search_q_str = ' '.join(search_q_str.split())
+        temp_query_str = temp_query_str.replace(ext, '')
+    if orig_bldg:
+        temp_query_str = re.sub(r'\b' + re.escape(orig_bldg) + r'\b', '', temp_query_str)
+    temp_query_str = re.sub(r'\s+0\b', '', temp_query_str)
+    base_region = ' '.join(temp_query_str.split())
+    
+    search_q_str = f"{base_region} {orig_bldg}" if orig_bldg else base_region
 
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
@@ -214,7 +216,7 @@ def master_juso_converter(keyword, original_zip=""):
         except Exception:
             pass
 
-    # 5. API 변환 실패 시(결과 없을 때) 원본 전처리 주소 그대로 유지 (동·호수 맨 뒤 정렬 적용)
+    # 5. API 변환 실패 시 원본 전처리 주소 유지 (동·호수 맨 뒤 정렬 적용)
     if not base_road_addr:
         return reorder_dong_ho_to_end(kw_str_pre)
 
