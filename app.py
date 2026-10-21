@@ -29,7 +29,15 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 ] ---
+# --- [ 동·호수 공백 포맷팅 함수 ] ---
+def fix_dong_ho_spacing(addr_str):
+    if not addr_str:
+        return addr_str
+    # 101동305호 형태를 101동 305호로 띄어쓰기 보정
+    addr_str = re.sub(r'(\d+동)(\d+호)', r'\1 \2', addr_str)
+    return addr_str
+
+# --- [ 완벽한 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -39,10 +47,31 @@ def clean_product_name(val):
     if ('풀액정필름2장' in s or '추가액정필름' in s) and '필요없음' not in s and ('풀액정' in s or '액정필름' in s):
         has_film = True
 
-    smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
+    # 우선순위 옵션 텍스트 추출 (//, 모델선택:, / 기준)
+    target_texts = [s]
+    if '//' in s:
+        target_texts.insert(0, s.split('//')[-1])
+    if '모델선택:' in s:
+        target_texts.insert(0, s.split('모델선택:')[-1])
+    if '/' in s:
+        target_texts.insert(0, s.split('/')[-1])
+
+    smartphone_match = None
+    for t in target_texts:
+        smartphone_match = re.search(r'(S\s*10\s*5G|S\s*10\s*플러스|S\s*20\s*플러스|S\s*20\s*울트라|S\s*22\s*플러스|S\s*22\s*울트라|노트\s*10\s*플러스|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', t, re.IGNORECASE)
+        if smartphone_match:
+            break
+
+    if not smartphone_match:
+        smartphone_match = re.search(r'(S\s*10\s*5G|S\s*10\s*플러스|S\s*20\s*플러스|S\s*20\s*울트라|S\s*22\s*플러스|S\s*22\s*울트라|노트\s*10\s*플러스|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
+
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
         if raw_model == 'S105G': target_model = 'S10 5G'
+        elif raw_model == 'S10플러스': target_model = 'S10플러스'
+        elif raw_model == 'S20플러스': target_model = 'S20플러스'
+        elif raw_model == 'S22플러스': target_model = 'S22플러스'
+        elif raw_model == '노트10플러스': target_model = '노트10플러스'
         elif raw_model in ['N960', 'SM-N960']: target_model = '노트9'
         elif raw_model == 'V50S': target_model = 'V50S'
         elif raw_model == 'V50': target_model = 'V50'
@@ -60,7 +89,7 @@ def clean_product_name(val):
         
         res = f"{target_model}[{qty}]" if qty > 1 else target_model
         if has_film: res += " +필름"
-        if '택배' in s: res += " 택배"
+        if '택배' in s or '택배배송' in s: res += " 택배"
         return res
     
     if '케이스' not in s:
@@ -100,7 +129,7 @@ def clean_product_name(val):
     if target == '와이드5': target = 'A22'
     
     result_str = f"{target}[{qty}]" if qty > 1 else target
-    if '택배' in s: result_str = f"{result_str} 택배"
+    if '택배' in s or '택배배송' in s: result_str = f"{result_str} 택배"
     if has_film: result_str = f"{result_str} +필름"
         
     return result_str
@@ -116,21 +145,18 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 네이버 공식 Geocoding API 엔진 ] ---
+# --- [ 네이버 공식 Geocoding API 엔진 (동·호수 띄어쓰기 적용) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    # 1. 하이픈 동·호수 형식 변환 (예: 115-2104 -> 115동 2104호)
     kw_str_mod = re.sub(r'\b(\d+)-(\d{3,4})\b', r'\1동 \2호', kw_str)
     
-    # 2. 상세 동/호수 및 괄호 정보 추출 패턴
     extra_pattern = r'(?:\b\d+동\s*\d+호?|\b\d+동|\b\d+호|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+층|\([^)]+\))'
     extra_details = re.findall(extra_pattern, kw_str_mod)
     
-    # 3. API 검색을 위한 순수 검색어 추출 (배송메모 등 제거)
     search_q_str = re.sub(r'문앞에.*$', '', kw_str_mod)
     for ext in extra_details:
         search_q_str = search_q_str.replace(ext, '')
@@ -141,7 +167,6 @@ def master_juso_converter(keyword, original_zip=""):
             base_road_addr = override_addr
             break
     else:
-        # 🚀 수정된 공식 네이버 Maps Geocoding API 엔드포인트 URL
         url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(search_q_str)}"
         headers = {
             "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
@@ -165,22 +190,22 @@ def master_juso_converter(keyword, original_zip=""):
             st.error(f"❌ 통신 예외 발생: {e}")
 
     if not base_road_addr:
-        return kw_str
+        return fix_dong_ho_spacing(kw_str)
 
-    # 4. 상세 동·호수 및 괄호 정보 결합
     for detail in extra_details:
-        detail_clean = detail.strip()
+        detail_clean = fix_dong_ho_spacing(detail.strip())
         if detail_clean and detail_clean not in base_road_addr:
             base_road_addr = f"{base_road_addr} {detail_clean}"
 
-    return remove_duplicate_words(base_road_addr)
+    final_addr = remove_duplicate_words(base_road_addr)
+    return fix_dong_ho_spacing(final_addr)
 
 
 # --- [ Streamlit 웹 UI ] ---
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 상품명 정리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 동·호수 띄어쓰기 및 상품명 정리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
