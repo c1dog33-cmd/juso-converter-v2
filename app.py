@@ -7,8 +7,8 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-# 🚀 카카오 REST API 키 설정 완료
-KAKAO_API_KEY = "880d50b6016d6833ccc3ff4695ae7f92"
+# 🚀 발급받은 브이월드 API 키 적용 완료
+VWORLD_API_KEY = "7F7E16A8-41A3-459F-8315-0C733BDBACBA"
 
 def fix_zipcode(val):
     if pd.isna(val) or val is None:
@@ -287,22 +287,22 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 카카오 키워드 검색 API 기반 주소 변환 엔진 (수정됨) ] ---
+# --- [ 브이월드(V-World) API 기반 주소 변환 엔진 (고도화된 전처리 및 상세주소 보존) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    # 1. 하이픈 동·호수 형식 변환 (예: 115-2104 -> 115동 2104호)
+    # 1. 하이픈으로 된 동·호수 형식 변환 (예: 115-2104 -> 115동 2104호)
     kw_str_mod = re.sub(r'\b(\d+)-(\d{3,4})\b', r'\1동 \2호', kw_str)
     
     # 2. 상세 동/호수 및 괄호 정보 추출 패턴
     extra_pattern = r'(?:\b\d+동\s*\d+호?|\b\d+동|\b\d+호|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+층|\([^)]+\))'
     extra_details = re.findall(extra_pattern, kw_str_mod)
     
-    # 3. API 검색을 위한 순수 검색어 추출 (배송메모 등 제거)
-    search_q_str = re.sub(r'문앞에.*$', '', kw_str_mod)
+    # 3. API 검색을 위한 순수 검색어 추출 (상세 동호수 및 괄호 제거)
+    search_q_str = kw_str_mod
     for ext in extra_details:
         search_q_str = search_q_str.replace(ext, '')
     search_q_str = ' '.join(search_q_str.split())
@@ -312,34 +312,42 @@ def master_juso_converter(keyword, original_zip=""):
             base_road_addr = override_addr
             break
     else:
-        # 🚀 주소 검색(address.json) 대신 키워드 검색(keyword.json) 사용하여 아파트명 포함 검색 지원
-        url = f"https://dapi.kakao.com/v2/local/search/keyword.json?query={urllib.parse.quote(search_q_str)}"
-        headers = {"Authorization": f"KakaoAK {KAKAO_API_KEY}"}
+        # 국토교통부 브이월드 주소 검색 API 호출
+        url = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=address&category=road&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
         
         base_road_addr = ""
         try:
-            response = requests.get(url, headers=headers, timeout=5)
+            response = requests.get(url, timeout=5)
             if response.status_code == 200:
                 res = response.json()
-                documents = res.get('documents', [])
-                if documents:
-                    doc = documents[0]
-                    # 키워드 검색 결과에서 도로명 주소 우선 사용, 없으면 지번 주소 사용
-                    road_info = doc.get('road_address_name')
-                    if road_info:
-                        base_road_addr = road_info
-                        building_name = doc.get('place_name', '')
-                        if building_name and building_name not in base_road_addr and '아파트' in building_name:
-                            base_road_addr = f"{base_road_addr} {building_name}"
-                    else:
-                        base_road_addr = doc.get('address_name')
+                result_block = res.get('response', {})
+                if result_block.get('status') == 'OK':
+                    items = result_block.get('result', {}).get('items', [])
+                    if items:
+                        addr_obj = items[0].get('address', {})
+                        base_road_addr = addr_obj.get('road', '') or addr_obj.get('parcel', '')
+                        if not base_road_addr:
+                            base_road_addr = items[0].get('title', '')
         except Exception:
             pass
+
+        if not base_road_addr:
+            # 2차 폴백 검색 (district 타입)
+            url_fallback = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=district&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
+            try:
+                resp2 = requests.get(url_fallback, timeout=5)
+                if resp2.status_code == 200:
+                    items2 = resp2.json().get('response', {}).get('result', {}).get('items', [])
+                    if items2:
+                        base_road_addr = items2[0].get('title', '')
+            except Exception:
+                pass
 
     if not base_road_addr:
         return kw_str
 
-    # 4. 상세 동·호수 및 괄호 정보 결합
+    # 4. 추출해 두었던 상세 동·호수 및 괄호 정보를 신주소 뒤에 안전하게 결합
+    # 이미 도로명 주소에 포함된 상세정보는 중복 추가 방지
     for detail in extra_details:
         detail_clean = detail.strip()
         if detail_clean and detail_clean not in base_road_addr:
@@ -351,8 +359,8 @@ def master_juso_converter(keyword, original_zip=""):
 # --- [ Streamlit 웹 UI ] ---
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
-st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (카카오 API 연동)")
-st.write("엑셀 파일을 업로드하면 카카오 키워드 API를 통해 도로명 주소 변환 및 상품명 정리가 이루어집니다.")
+st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (국토부 브이월드 연동)")
+st.write("엑셀 파일을 업로드하면 국토부 브이월드 오픈API를 통해 도로명 주소 변환 및 상품명 정리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
