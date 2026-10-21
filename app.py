@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-# 🚀 발급받은 브이월드 API 키 적용 완료
+# 발급받은 브이월드 API 키
 VWORLD_API_KEY = "7F7E16A8-41A3-459F-8315-0C733BDBACBA"
 
 def fix_zipcode(val):
@@ -299,7 +299,7 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 브이월드(V-World) API 기반 주소 변환 엔진 ] ---
+# --- [ 브이월드(V-World) API 기반 주소 변환 엔진 (파싱 보완) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -322,8 +322,8 @@ def master_juso_converter(keyword, original_zip=""):
     search_q_str = re.sub(extra_pattern, '', kw_str)
     search_q_str = ' '.join(search_q_str.split())
 
-    # 국토교통부 브이월드 주소 검색 API 호출 URL
-    url = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=10&page=1&type=address&category=road&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
+    # 국토교통부 브이월드 주소 검색 API 호출 URL (type=address 대신 일반 search 사용 및 파라미터 최적화)
+    url = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=address&category=road&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
     
     base_road_addr = ""
     
@@ -335,9 +335,27 @@ def master_juso_converter(keyword, original_zip=""):
             if result_block.get('status') == 'OK':
                 items = result_block.get('result', {}).get('items', [])
                 if items:
-                    base_road_addr = items[0].get('address', {}).get('road', '') or items[0].get('address', {}).get('parcel', '')
+                    # 도로명 주소가 있으면 우선 사용, 없으면 parcel(지번) 사용
+                    addr_obj = items[0].get('address', {})
+                    base_road_addr = addr_obj.get('road', '') or addr_obj.get('parcel', '')
+                    
+                    # 만약 address 구조가 다른 형태일 경우 대비한 폴백
+                    if not base_road_addr:
+                        base_road_addr = items[0].get('title', '')
     except Exception:
         pass
+
+    if not base_road_addr:
+        # 브이월드 검색 실패 시 일반 통합검색 쿼리로 재시도
+        url_fallback = f"https://api.vworld.kr/req/search?service=search&request=search&version=2.0&crs=EPSG:4326&size=5&page=1&type=district&query={urllib.parse.quote(search_q_str)}&key={VWORLD_API_KEY}&format=json"
+        try:
+            resp2 = requests.get(url_fallback, timeout=5)
+            if resp2.status_code == 200:
+                items2 = resp2.json().get('response', {}).get('result', {}).get('items', [])
+                if items2:
+                    base_road_addr = items2[0].get('title', '')
+        except Exception:
+            pass
 
     if not base_road_addr:
         return kw_str
