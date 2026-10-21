@@ -29,11 +29,23 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 동·호수 공백 포맷팅 함수 ] ---
-def fix_dong_ho_spacing(addr_str):
+# --- [ 신주소(도로명 주소) 판별 함수 ] ---
+def is_new_road_address(addr_str):
+    if not addr_str:
+        return False
+    # 도로명 패턴 ('로 O번길 O' 또는 '길 O' 등)이 포함되어 있으면 신주소로 판단
+    road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
+    return bool(re.search(road_pattern, addr_str))
+
+# --- [ 주소 전처리 및 동·호수 포맷팅 함수 ] ---
+def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
-    # 101동305호 형태를 101동 305호로 띄어쓰기 보정
+    # 1. 슬래시 형태(105/2202)를 105동 2202호로 변환
+    addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
+    # 2. 하이픈 동·호수 형태(101-305) 변환
+    addr_str = re.sub(r'\b(\d+)-(\d{3,4})\b', r'\1동 \2호', addr_str)
+    # 3. 띄어쓰기 보정 (711동904호 -> 711동 904호)
     addr_str = re.sub(r'(\d+동)(\d+호)', r'\1 \2', addr_str)
     return addr_str
 
@@ -133,39 +145,31 @@ def clean_product_name(val):
         
     return result_str
 
-def remove_duplicate_words(addr_str):
-    if not addr_str:
-        return addr_str
-    words = addr_str.split()
-    clean_words = []
-    for w in words:
-        clean_w = w.strip('(),')
-        if not clean_words or clean_w != clean_words[-1].strip('(),'):
-            clean_words.append(w)
-    return ' '.join(clean_words)
-
-# --- [ 네이버 공식 Geocoding API 엔진 (아파트·빌리지명 보존 및 중복 괄호 필터링 적용) ] ---
+# --- [ 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
+    kw_str_pre = pre_process_address(kw_str)
     
-    # 1. 원본 주소에서 아파트·빌리지·빌라·오피스텔명 추출 (확장 패턴)
-    apt_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지))', kw_str)
-    orig_apt = apt_match.group(1) if apt_match else ""
+    # 1. 이미 신주소(도로명 주소)인 경우 변환 없이 원본 띄어쓰기만 정돈하여 반환
+    if is_new_road_address(kw_str_pre):
+        return kw_str_pre
 
-    # 2. 하이픈 동·호수 형식 변환
-    kw_str_mod = re.sub(r'\b(\d+)-(\d{3,4})\b', r'\1동 \2호', kw_str)
+    # 2. 건물·아파트·빌리지·고시원·프라자 이름 추출
+    bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가))', kw_str_pre)
+    orig_bldg = bldg_match.group(1) if bldg_match else ""
+
+    # 3. 상세 동/호수, 층, 괄호 및 상호명 패턴 추출
+    extra_pattern = r'(?:\b\d+\s*동\s*\d+\s*호?|\b\d+\s*동|\b\d+\s*호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
+    extra_details = re.findall(extra_pattern, kw_str_pre)
     
-    # 3. 상세 동/호수, 층, 알파벳 동(B동 등), 생활관 및 상가/메모 패턴 추출
-    extra_pattern = r'(?:\b\d+동\s*\d+호?|\b\d+동|\b\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
-    extra_details = re.findall(extra_pattern, kw_str_mod)
-    
-    # 4. API 검색용 순수 검색어 추출
-    search_q_str = re.sub(r'문앞에.*$', '', kw_str_mod)
+    # 4. API 검색용 순수 검색어 추출 (더미 '0' 등 제거)
+    search_q_str = kw_str_pre
     for ext in extra_details:
         search_q_str = search_q_str.replace(ext, '')
+    search_q_str = re.sub(r'\s+0\b', '', search_q_str)
     search_q_str = ' '.join(search_q_str.split())
 
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
@@ -190,109 +194,32 @@ def master_juso_converter(keyword, original_zip=""):
                     road_addr = addr_info.get('roadAddress', '')
                     jibun_addr = addr_info.get('jibunAddress', '')
                     base_road_addr = road_addr if road_addr else jibun_addr
-            else:
-                st.error(f"❌ 네이버 API 에러 (코드 {response.status_code}): {response.text}")
-        except Exception as e:
-            st.error(f"❌ 통신 예외 발생: {e}")
+        except Exception:
+            pass
 
-    # 5. API 변환 실패 시 원본 유지
+    # 5. API 변환 실패 시(결과 없을 때) 원본 전처리 주소 그대로 유지
     if not base_road_addr:
-        return fix_dong_ho_spacing(kw_str)
+        return kw_str_pre
 
-    # 6. 네이버 결과에 아파트·빌리지명이 빠져 있으면 원본 이름 보존·추가
-    if orig_apt and orig_apt not in base_road_addr:
-        base_road_addr = f"{base_road_addr} {orig_apt}"
+    # 6. 네이버 결과에 건물명이 빠져 있으면 보존·추가
+    if orig_bldg and orig_bldg not in base_road_addr:
+        base_road_addr = f"{base_road_addr} {orig_bldg}"
 
-    # 7. 상세 동·호수 및 고객 메모/상가명 결합 (중복 법정동 괄호 스마트 필터링 적용)
+    # 7. 상세 정보 결합 (중복 괄호 스마트 필터링)
     for detail in extra_details:
-        detail_clean = fix_dong_ho_spacing(detail.strip())
-        # 네이버 결과에 이미 포함되어 있거나 불필요한 법정동 중복 괄호인 경우 필터링
+        detail_clean = pre_process_address(detail.strip())
         if detail_clean.startswith('(') and detail_clean.endswith(')'):
-            if any(sub in base_road_addr for sub in detail_clean.strip('()').split(',')):
+            if any(sub.strip() in base_road_addr for sub in detail_clean.strip('()').split(',')):
                 continue
         if detail_clean and detail_clean not in base_road_addr:
             base_road_addr = f"{base_road_addr} {detail_clean}"
 
-    final_addr = remove_duplicate_words(base_road_addr)
-    return fix_dong_ho_spacing(final_addr)
-
-
-# --- [ Streamlit 웹 UI ] ---
-st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
-
-st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트/빌리지명 보존, 중복 괄호 제거 및 상품명 정리가 이루어집니다.")
-
-uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
-
-if uploaded_file is not None:
-    df = pd.read_excel(uploaded_file)
-    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
-    st.dataframe(df.head())
-
-    if 'excel_data' not in st.session_state:
-        st.session_state.excel_data = None
-
-    if st.button("🚀 주소 변환 및 서식 적용 시작"):
-        with st.spinner("주소를 변환하는 중입니다..."):
-            if '우편번호' in df.columns:
-                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
-
-            if '선택정보' in df.columns:
-                df['선택정보'] = df['선택정보'].apply(clean_product_name)
-
-            if '배송지' in df.columns:
-                progress_bar = st.progress(0)
-                total = len(df)
-                
-                converted_addrs = []
-                for i, row in df.iterrows():
-                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
-                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
-                    converted_addrs.append(res)
-                    progress_bar.progress((i + 1) / total)
-                    
-                df['배송지'] = converted_addrs
-            else:
-                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
-
-            for col in df.columns:
-                df[col] = df[col].apply(remove_illegal_chars)
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False)
-                worksheet = writer.sheets['Sheet1']
-                
-                for col in worksheet.columns:
-                    max_len = 0
-                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                    for cell in col:
-                        val = str(cell.value or '')
-                        length = sum(2 if ord(char) > 127 else 1 for char in val)
-                        if length > max_len:
-                            max_len = length
-                    adjusted_width = max(max_len + 4, 12)
-                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
-
-                font_size_8 = Font(size=8)
-                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
-                    worksheet.row_dimensions[row[0].row].height = 18
-                    for cell in row:
-                        cell.font = font_size_8
-                        
-                if '우편번호' in df.columns:
-                    zip_col_idx = df.columns.get_loc('우편번호') + 1
-                    for row in range(2, worksheet.max_row + 1):
-                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
-
-            st.session_state.excel_data = output.getvalue()
-        st.success("🎉 주소 변환 및 상품명 정리가 완료되었습니다!")
-
-    if st.session_state.excel_data is not None:
-        st.download_button(
-            label="📥 변환된 엑셀 파일 다운로드",
-            data=st.session_state.excel_data,
-            file_name="우편배송_변환결과_네이버.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    # 8. 중복 연속 단어 제거
+    words = base_road_addr.split()
+    clean_words = []
+    for w in words:
+        clean_w = w.strip('(),')
+        if not clean_words or clean_w != clean_words[-1].strip('(),'):
+            clean_words.append(w)
+            
+    return pre_process_address(' '.join(clean_words))
