@@ -7,7 +7,7 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-# 🚀 카카오 REST API 키 적용 완료
+# 🚀 카카오 REST API 키 설정 완료
 KAKAO_API_KEY = "880d50b6016d6833ccc3ff4695ae7f92"
 
 def fix_zipcode(val):
@@ -312,7 +312,6 @@ def master_juso_converter(keyword, original_zip=""):
             base_road_addr = override_addr
             break
     else:
-        # 카카오 로컬 주소 검색 API 호출
         url = f"https://dapi.kakao.com/v2/local/search/address.json?query={urllib.parse.quote(search_q_str)}"
         headers = {"Authorization": f"KakaoAK {KAKAO_API_KEY}"}
         
