@@ -21,13 +21,13 @@ SPECIAL_EXCEPTIONS = {
     "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
 }
 
-# --- [ openpyxl 제er 문자 에러 방지 함수 ] ---
+# --- [ openpyxl 제어 문자 에러 방지 함수 ] ---
 def remove_illegal_chars(val):
     if isinstance(val, str):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 상품명 정제 함수 (와이드5->A22 매핑, 케이블 역순 탐지, 풀액정필름2장, S25엣지, 노트20울트라 반영) ] ---
+# --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -69,7 +69,6 @@ def clean_product_name(val):
             if '택배' in s: res += " 택배"
             return res
 
-    # 🚀 [우선 탐지] 슬래시('/') 뒤쪽(옵션 영역) 스캔 (S25엣지, 노트20울트라 등 반영)
     if '/' in s:
         slash_parts = s.split('/')
         for p in reversed(slash_parts):
@@ -299,7 +298,7 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 만능 주소 변환 엔진 (디버깅 에러 출력 추가) ] ---
+# --- [ 만능 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -333,8 +332,8 @@ def master_juso_converter(keyword, original_zip=""):
             hos = []
             for d in found_details:
                 for tok in d.split():
-                    if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호'): hos.append(tok)
-                    elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
+                    if re.search(r'\d+호$|호$', tok) or tok.endswith('호'): hos.append(tok)
+                    elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
                     else: building_names.append(tok)
             
             ordered_details = building_names + dongs + hos
@@ -419,55 +418,44 @@ def master_juso_converter(keyword, original_zip=""):
         
         try:
             response = requests.get(url, timeout=5)
-            # 🚀 [디버깅 추가] API 응답 코드 체크 (정상이 아닐 경우 터미널/로그에 경고 표시)
-            if response.status_code != 200:
-                print(f"[API 경고] 상태 코드: {response.status_code}, 검색어: {q}")
-                continue
+            if response.status_code == 200:
+                res = response.json()
+                juso_list = res.get('results', {}).get('juso') or []
                 
-            res = response.json()
-            common = res.get('results', {}).get('common', {})
-            err_code = common.get('errorCode')
-            
-            if err_code and err_code != '0':
-                print(f"[API 에러] 코드: {err_code}, 메시지: {common.get('errorMessage')}")
-                continue
-                
-            juso_list = res.get('results', {}).get('juso') or []
-            if juso_list:
-                selected_juso = None
-                if has_2cha:
-                    for juso in juso_list:
-                        bd_name = juso.get('bdNm', '').strip()
-                        if '2차' in bd_name or '2단지' in bd_name:
-                            selected_juso = juso
-                            break
+                if juso_list:
+                    selected_juso = None
+                    if has_2cha:
+                        for juso in juso_list:
+                            bd_name = juso.get('bdNm', '').strip()
+                            if '2차' in bd_name or '2단지' in bd_name:
+                                selected_juso = juso
+                                break
 
-                if not selected_juso:
-                    for juso in juso_list:
-                        bd_name = juso.get('bdNm', '').strip()
-                        if not is_user_sangga and '상가' in bd_name:
-                            continue
-                        if bd_name and building_name_candidate and (bd_name in building_name_candidate or building_name_candidate in bd_name):
-                            selected_juso = juso
-                            break
+                    if not selected_juso:
+                        for juso in juso_list:
+                            bd_name = juso.get('bdNm', '').strip()
+                            if not is_user_sangga and '상가' in bd_name:
+                                continue
+                            if bd_name and building_name_candidate and (bd_name in building_name_candidate or building_name_candidate in bd_name):
+                                selected_juso = juso
+                                break
 
-                if not selected_juso and not is_user_sangga:
-                    for juso in juso_list:
-                        if '상가' not in juso.get('bdNm', ''):
-                            selected_juso = juso
-                            break
+                    if not selected_juso and not is_user_sangga:
+                        for juso in juso_list:
+                            if '상가' not in juso.get('bdNm', ''):
+                                selected_juso = juso
+                                break
 
-                if not selected_juso:
-                    selected_juso = juso_list[0]
+                    if not selected_juso:
+                        selected_juso = juso_list[0]
 
-                base_road_addr = selected_juso.get('roadAddr')
-                api_bd_nm = selected_juso.get('bdNm', '')
-                api_zip_no = selected_juso.get('zipNo', '')
+                    base_road_addr = selected_juso.get('roadAddr')
+                    api_bd_nm = selected_juso.get('bdNm', '')
+                    api_zip_no = selected_juso.get('zipNo', '')
 
-                if base_road_addr:
-                    break
-        except Exception as e:
-            print(f"[통신 예외 발생] {e}")
+                    if base_road_addr:
+                        break
+        except Exception:
             continue
 
     if not base_road_addr:
@@ -536,9 +524,9 @@ def master_juso_converter(keyword, original_zip=""):
             flat_tokens.append(t)
 
     for tok in flat_tokens:
-        if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+        if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
             hos.append(tok)
-        elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'):
+        elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
             dongs.append(tok)
         else:
             building_names.append(tok)
@@ -572,4 +560,85 @@ def master_juso_converter(keyword, original_zip=""):
         cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
         full_result = f"{full_result} ({cleaned_notes})"
 
-    return remove_duplicate_words(full_
+    return remove_duplicate_words(full_result)
+
+
+# --- [ Streamlit 웹 UI ] ---
+st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
+
+st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정")
+st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
+
+uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
+
+if uploaded_file is not None:
+    df = pd.read_excel(uploaded_file)
+    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
+    st.dataframe(df.head())
+
+    if 'excel_data' not in st.session_state:
+        st.session_state.excel_data = None
+
+    if st.button("🚀 주소 변환 및 서식 적용 시작"):
+        with st.spinner("주소를 변환하고 상품명을 정리하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
+            if '우편번호' in df.columns:
+                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
+
+            if '선택정보' in df.columns:
+                df['선택정보'] = df['선택정보'].apply(clean_product_name)
+
+            if '배송지' in df.columns:
+                progress_bar = st.progress(0)
+                total = len(df)
+                
+                converted_addrs = []
+                for i, row in df.iterrows():
+                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
+                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
+                    converted_addrs.append(res)
+                    progress_bar.progress((i + 1) / total)
+                    
+                df['배송지'] = converted_addrs
+            else:
+                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
+
+            for col in df.columns:
+                df[col] = df[col].apply(remove_illegal_chars)
+
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False)
+                worksheet = writer.sheets['Sheet1']
+                
+                for col in worksheet.columns:
+                    max_len = 0
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    for cell in col:
+                        val = str(cell.value or '')
+                        length = sum(2 if ord(char) > 127 else 1 for char in val)
+                        if length > max_len:
+                            max_len = length
+                    adjusted_width = max(max_len + 4, 12)
+                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
+
+                font_size_8 = Font(size=8)
+                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
+                    worksheet.row_dimensions[row[0].row].height = 18
+                    for cell in row:
+                        cell.font = font_size_8
+                        
+                if '우편번호' in df.columns:
+                    zip_col_idx = df.columns.get_loc('우편번호') + 1
+                    for row in range(2, worksheet.max_row + 1):
+                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
+
+            st.session_state.excel_data = output.getvalue()
+        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
+
+    if st.session_state.excel_data is not None:
+        st.download_button(
+            label="📥 변환된 엑셀 파일 다운로드",
+            data=st.session_state.excel_data,
+            file_name="우편배송_변환결과.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
