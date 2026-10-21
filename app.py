@@ -287,7 +287,7 @@ def remove_duplicate_words(addr_str):
             clean_words.append(w)
     return ' '.join(clean_words)
 
-# --- [ 카카오 로컬 API 기반 주소 변환 엔진 ] ---
+# --- [ 카카오 키워드 검색 API 기반 주소 변환 엔진 (수정됨) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -301,8 +301,8 @@ def master_juso_converter(keyword, original_zip=""):
     extra_pattern = r'(?:\b\d+동\s*\d+호?|\b\d+동|\b\d+호|\b[가나다라마바사아자차카타파하A-Za-z]\s*동\s*\d+호?|\d+층|\([^)]+\))'
     extra_details = re.findall(extra_pattern, kw_str_mod)
     
-    # 3. API 검색을 위한 순수 검색어 추출
-    search_q_str = kw_str_mod
+    # 3. API 검색을 위한 순수 검색어 추출 (배송메모 등 제거)
+    search_q_str = re.sub(r'문앞에.*$', '', kw_str_mod)
     for ext in extra_details:
         search_q_str = search_q_str.replace(ext, '')
     search_q_str = ' '.join(search_q_str.split())
@@ -312,7 +312,8 @@ def master_juso_converter(keyword, original_zip=""):
             base_road_addr = override_addr
             break
     else:
-        url = f"https://dapi.kakao.com/v2/local/search/address.json?query={urllib.parse.quote(search_q_str)}"
+        # 🚀 주소 검색(address.json) 대신 키워드 검색(keyword.json) 사용하여 아파트명 포함 검색 지원
+        url = f"https://dapi.kakao.com/v2/local/search/keyword.json?query={urllib.parse.quote(search_q_str)}"
         headers = {"Authorization": f"KakaoAK {KAKAO_API_KEY}"}
         
         base_road_addr = ""
@@ -323,11 +324,12 @@ def master_juso_converter(keyword, original_zip=""):
                 documents = res.get('documents', [])
                 if documents:
                     doc = documents[0]
-                    road_info = doc.get('road_address')
+                    # 키워드 검색 결과에서 도로명 주소 우선 사용, 없으면 지번 주소 사용
+                    road_info = doc.get('road_address_name')
                     if road_info:
-                        base_road_addr = road_info.get('address_name')
-                        building_name = road_info.get('building_name', '')
-                        if building_name and building_name not in base_road_addr:
+                        base_road_addr = road_info
+                        building_name = doc.get('place_name', '')
+                        if building_name and building_name not in base_road_addr and '아파트' in building_name:
                             base_road_addr = f"{base_road_addr} {building_name}"
                     else:
                         base_road_addr = doc.get('address_name')
@@ -350,7 +352,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (카카오 API 연동)")
-st.write("엑셀 파일을 업로드하면 카카오 주소 API를 통해 도로명 주소 변환 및 상품명 정리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 카카오 키워드 API를 통해 도로명 주소 변환 및 상품명 정리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
