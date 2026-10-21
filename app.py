@@ -7,7 +7,6 @@ import requests
 import streamlit as st
 from openpyxl.styles import Font
 
-# 🚀 새로 발급받은 승인키 적용 (기존 키 삭제 완료)
 CONFIRM_KEY = "devU01TX0FVVEgyMDI2MTAyMTA5NTExMjEyMDc4OTQ="
 
 def fix_zipcode(val):
@@ -22,7 +21,7 @@ SPECIAL_EXCEPTIONS = {
     "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
 }
 
-# --- [ openpyxl 제어 문자 에러 방지 함수 ] ---
+# --- [ openpyxl 제er 문자 에러 방지 함수 ] ---
 def remove_illegal_chars(val):
     if isinstance(val, str):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
@@ -139,7 +138,6 @@ def clean_product_name(val):
         if '택배' in s: res += " 택배"
         return res
 
-    # 🚀 [범용 스마트 탐지] 와이드5 -> A22 매핑 및 풀액정필름2장, S25엣지 반영
     smartphone_match = re.search(r'(S\s*10\s*5G|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*10\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
     if smartphone_match:
         raw_model = smartphone_match.group(1).replace(" ", "").upper()
@@ -212,7 +210,6 @@ def clean_product_name(val):
         has_g = 'ㄱ자' in s or 'ㄱ 자' in s
         has_c_type = 'C타입' in s or 'C 타입' in s or 'C-type' in s or 'c타입' in s
         
-        # 🚀 [케이블 길이 역순 탐지]
         length_str = ""
         if '/' in s:
             cable_parts = s.split('/')
@@ -263,7 +260,6 @@ def clean_product_name(val):
         target = sub_parts[-1].strip() if len(sub_parts) > 1 else base
         
     target = re.sub(r'\([^)]*\)', '', target).strip()
-    
     target = re.sub(r'케이스', '', target)
     target = re.sub(r'풀액정', '', target)
     target = re.sub(r'2장', '', target)
@@ -280,16 +276,13 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 정제 및 텍스트 교정 함수 ] ---
 def remove_duplicate_words(addr_str):
     if not addr_str:
         return addr_str
-    
     addr_str = re.sub(r'남동\s+구', '남동구', addr_str)
     addr_str = re.sub(r'서\s+구', '서구', addr_str)
     addr_str = re.sub(r'간\s+석동', '간석동', addr_str)
     addr_str = re.sub(r'가\s+능동', '가능동', addr_str)
-
     addr_str = re.sub(r'(\d+)\s*/\s*(\d+)', r'\1동 \2호', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+동\s*(\d+)\b', r'\1동 \2', addr_str)
     addr_str = re.sub(r'\b(\d+)\s+동\b', r'\1동', addr_str)
@@ -304,16 +297,14 @@ def remove_duplicate_words(addr_str):
         clean_w = w.strip('(),')
         if not clean_words or clean_w != clean_words[-1].strip('(),'):
             clean_words.append(w)
-            
     return ' '.join(clean_words)
 
-# --- [ 만능 주소 변환 엔진 (우편번호 검증 안전장치 포함) ] ---
+# --- [ 만능 주소 변환 엔진 (디버깅 에러 출력 추가) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
-    
     kw_str = re.sub(r'(\d+)\s+동\b', r'\1동', kw_str)
     kw_str = re.sub(r'(\d+)\s+호\b', r'\1호', kw_str)
     kw_str = re.sub(r'(\d+)\s+층\b', r'\1층', kw_str)
@@ -342,17 +333,15 @@ def master_juso_converter(keyword, original_zip=""):
             hos = []
             for d in found_details:
                 for tok in d.split():
-                    if re.search(r'\d+호$|호$', tok) or tok.endswith('호'): hos.append(tok)
-                    elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
+                    if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호'): hos.append(tok)
+                    elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'): dongs.append(tok)
                     else: building_names.append(tok)
             
             ordered_details = building_names + dongs + hos
             final_res = f"{override_addr} {' '.join(ordered_details)}"
-            
             if delivery_notes:
                 cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
                 final_res = f"{final_res} ({cleaned_notes})"
-                
             return remove_duplicate_words(final_res)
 
     if '불로동' in kw_str:
@@ -381,14 +370,6 @@ def master_juso_converter(keyword, original_zip=""):
             processed_tokens.append(t)
     search_q_str = " ".join(processed_tokens)
     
-    if '월산동 986-3' in search_q_str or '월산동 986' in search_q_str:
-        extra = search_q_str.replace('광주광역시', '').replace('전남광주통합특별시', '').replace('남구', '').replace('월산동', '').replace('986-3', '').replace('986', '').strip()
-        res_str = f"광주광역시 남구 대남대로 363 {extra} {' '.join(extra_details)}".strip()
-        if delivery_notes:
-            cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
-            res_str = f"{res_str} ({cleaned_notes})"
-        return remove_duplicate_words(res_str)
-
     base_tokens = search_q_str.split()
     sido_sigungu_dong_tokens = []
     jibeon_token = ""
@@ -438,44 +419,55 @@ def master_juso_converter(keyword, original_zip=""):
         
         try:
             response = requests.get(url, timeout=5)
-            if response.status_code == 200:
-                res = response.json()
-                juso_list = res.get('results', {}).get('juso') or []
+            # 🚀 [디버깅 추가] API 응답 코드 체크 (정상이 아닐 경우 터미널/로그에 경고 표시)
+            if response.status_code != 200:
+                print(f"[API 경고] 상태 코드: {response.status_code}, 검색어: {q}")
+                continue
                 
-                if juso_list:
-                    selected_juso = None
-                    if has_2cha:
-                        for juso in juso_list:
-                            bd_name = juso.get('bdNm', '').strip()
-                            if '2차' in bd_name or '2단지' in bd_name:
-                                selected_juso = juso
-                                break
+            res = response.json()
+            common = res.get('results', {}).get('common', {})
+            err_code = common.get('errorCode')
+            
+            if err_code and err_code != '0':
+                print(f"[API 에러] 코드: {err_code}, 메시지: {common.get('errorMessage')}")
+                continue
+                
+            juso_list = res.get('results', {}).get('juso') or []
+            if juso_list:
+                selected_juso = None
+                if has_2cha:
+                    for juso in juso_list:
+                        bd_name = juso.get('bdNm', '').strip()
+                        if '2차' in bd_name or '2단지' in bd_name:
+                            selected_juso = juso
+                            break
 
-                    if not selected_juso:
-                        for juso in juso_list:
-                            bd_name = juso.get('bdNm', '').strip()
-                            if not is_user_sangga and '상가' in bd_name:
-                                continue
-                            if bd_name and building_name_candidate and (bd_name in building_name_candidate or building_name_candidate in bd_name):
-                                selected_juso = juso
-                                break
+                if not selected_juso:
+                    for juso in juso_list:
+                        bd_name = juso.get('bdNm', '').strip()
+                        if not is_user_sangga and '상가' in bd_name:
+                            continue
+                        if bd_name and building_name_candidate and (bd_name in building_name_candidate or building_name_candidate in bd_name):
+                            selected_juso = juso
+                            break
 
-                    if not selected_juso and not is_user_sangga:
-                        for juso in juso_list:
-                            if '상가' not in juso.get('bdNm', ''):
-                                selected_juso = juso
-                                break
+                if not selected_juso and not is_user_sangga:
+                    for juso in juso_list:
+                        if '상가' not in juso.get('bdNm', ''):
+                            selected_juso = juso
+                            break
 
-                    if not selected_juso:
-                        selected_juso = juso_list[0]
+                if not selected_juso:
+                    selected_juso = juso_list[0]
 
-                    base_road_addr = selected_juso.get('roadAddr')
-                    api_bd_nm = selected_juso.get('bdNm', '')
-                    api_zip_no = selected_juso.get('zipNo', '')
+                base_road_addr = selected_juso.get('roadAddr')
+                api_bd_nm = selected_juso.get('bdNm', '')
+                api_zip_no = selected_juso.get('zipNo', '')
 
-                    if base_road_addr:
-                        break
-        except Exception:
+                if base_road_addr:
+                    break
+        except Exception as e:
+            print(f"[통신 예외 발생] {e}")
             continue
 
     if not base_road_addr:
@@ -544,9 +536,9 @@ def master_juso_converter(keyword, original_zip=""):
             flat_tokens.append(t)
 
     for tok in flat_tokens:
-        if re.search(r'\d+호$|호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
+        if re.search(r'\d+호$\vert{}호$', tok) or tok.endswith('호') or re.search(r'\d+층$', tok) or tok.endswith('층'):
             hos.append(tok)
-        elif re.search(r'^[가-힣A-Za-z]\s*동$|\d+동$', tok) or tok.endswith('동'):
+        elif re.search(r'^[가-힣A-Za-z]\s*동$\vert{}\d+동$', tok) or tok.endswith('동'):
             dongs.append(tok)
         else:
             building_names.append(tok)
@@ -580,89 +572,4 @@ def master_juso_converter(keyword, original_zip=""):
         cleaned_notes = " ".join([n.strip() for n in delivery_notes if n.strip()])
         full_result = f"{full_result} ({cleaned_notes})"
 
-    return remove_duplicate_words(full_result)
-
-
-# --- [ Streamlit 웹 UI ] ---
-st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
-
-st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정")
-st.write("엑셀 파일을 업로드하면 도로명 주소 변환, 우편번호 0 보존, 상품명 모델명 자동 정리, 엑셀 서식을 자동으로 적용해 줍니다.")
-
-uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
-
-if uploaded_file is not None:
-    df = pd.read_excel(uploaded_file)
-    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
-    st.dataframe(df.head())
-
-    if 'excel_data' not in st.session_state:
-        st.session_state.excel_data = None
-
-    if st.button("🚀 주소 변환 및 서식 적용 시작"):
-        with st.spinner("주소를 변환하고 상품명을 정리하는 중입니다... 데이터 양에 따라 시간이 걸릴 수 있습니다."):
-            if '우편번호' in df.columns:
-                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
-
-            if '선택정보' in df.columns:
-                df['선택정보'] = df['선택정보'].apply(clean_product_name)
-
-            if '배송지' in df.columns:
-                progress_bar = st.progress(0)
-                total = len(df)
-                
-                converted_addrs = []
-                for i, row in df.iterrows():
-                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
-                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
-                    converted_addrs.append(res)
-                    progress_bar.progress((i + 1) / total)
-                    
-                df['배송지'] = converted_addrs
-            else:
-                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
-
-            target_columns = ['수취인명', '전화', '우편번호', '배송지', '선택정보', '기타', '구분']
-            if len(df.columns) == len(target_columns):
-                df.columns = target_columns
-
-            for col in df.columns:
-                df[col] = df[col].apply(remove_illegal_chars)
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False)
-                worksheet = writer.sheets['Sheet1']
-                
-                for col in worksheet.columns:
-                    max_len = 0
-                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                    for cell in col:
-                        val = str(cell.value or '')
-                        length = sum(2 if ord(char) > 127 else 1 for char in val)
-                        if length > max_len:
-                            max_len = length
-                    adjusted_width = max(max_len + 4, 12)
-                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
-
-                font_size_8 = Font(size=8)
-                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
-                    worksheet.row_dimensions[row[0].row].height = 18
-                    for cell in row:
-                        cell.font = font_size_8
-                        
-                if '우편번호' in df.columns:
-                    zip_col_idx = df.columns.get_loc('우편번호') + 1
-                    for row in range(2, worksheet.max_row + 1):
-                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
-
-            st.session_state.excel_data = output.getvalue()
-        st.success("🎉 주소 변환 및 상품명 정리가 완벽하게 완료되었습니다!")
-
-    if st.session_state.excel_data is not None:
-        st.download_button(
-            label="📥 변환된 엑셀 파일 다운로드",
-            data=st.session_state.excel_data,
-            file_name="우편배송_변환결과.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
+    return remove_duplicate_words(full_
