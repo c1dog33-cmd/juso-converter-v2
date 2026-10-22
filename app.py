@@ -17,10 +17,11 @@ def fix_zipcode(val):
     val_str = str(val).split('.')[0].strip()
     return val_str.zfill(5) if val_str else ""
 
-# --- [ 특정 예외 주소 및 행정개편 강제 매핑 사전 ] ---
+# --- [ 특정 예외 주소 및 상가/아파트 분리 강제 매핑 사전 ] ---
 SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12 (불로동, 신검단중앙역풍경채어바니티)",
     "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
+    "율곡동 415": "경상북도 김천시 혁신8로 66",  # 율곡동 415번지 아파트 전용 도로명 매핑
 }
 
 # --- [ openpyxl 제어 문자 에러 방지 함수 ] ---
@@ -36,6 +37,32 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
+# --- [ 후위 상세 정보(층수, 부서명, 메모 등) 사전 분리 함수 ] ---
+def parse_trailing_info(addr_str):
+    if not addr_str:
+        return addr_str, ""
+    words = addr_str.split()
+    if len(words) <= 1:
+        return addr_str, ""
+    
+    trailing_words = []
+    for i in range(1, min(4, len(words) + 1)):
+        w = words[-i]
+        if any(term in w for term in ['층', '지층', '부', '팀', '문앞', '경비실', '택배함', '부재시', '비번', '총무']):
+            trailing_words.insert(0, w)
+        else:
+            if trailing_words and (w in ['지하', '1', '2', '3', '4', '5', '상세', '사무실']):
+                trailing_words.insert(0, w)
+            else:
+                break
+                
+    if trailing_words:
+        trailing = " ".join(trailing_words)
+        cleaned = " ".join(words[:-len(trailing_words)])
+        return cleaned, trailing
+        
+    return addr_str, ""
+
 # --- [ 주소 전처리 및 동·호수 포맷팅 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
@@ -43,13 +70,24 @@ def pre_process_address(addr_str):
     # 1. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
     
-    # 2. 건물 동 번호에 호수가 누락된 경우 포맷팅 (법정동 '창동' 등은 제외하고 숫자 동 및 가/나/다 동만 타겟)
-    addr_str = re.sub(r'\b(\d+\s*동|[가나다라마바사아자차카타파하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
+    # 2. 아파트/빌라명 뒤의 하이픈 동·호수 변환 (예: 대우아파트 304-505호 -> 304동 505호)
+    def replace_bldg_hyphen(match):
+        prefix = match.group(1)
+        d = match.group(2)
+        h = match.group(3)
+        return f"{prefix} {d}동 {h}호"
     
-    # 3. 아파트 이름과 호수가 띄어쓰기 없이 붙어 있는 경우 포맷팅 (예: 부향하나로아파트407호 -> 부향하나로아파트 407호)
+    addr_str = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+맨션)\s+(\d{1,4})-(\d{1,4})호?', replace_bldg_hyphen, addr_str)
+    addr_str = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', addr_str)
+
+    # 3. 건물 동 번호 포맷팅 (법정동 '창동' 등은 제외하고 숫자 동 및 한글 보조 동: 비동, 가동 등)
+    addr_str = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
+    addr_str = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', addr_str)
+    
+    # 4. 아파트 이름과 호수가 띄어쓰기 없이 붙어 있는 경우 포맷팅
     addr_str = re.sub(r'([가-힣A-Za-z0-9]+(?:아파트|스타힐스|캐슬|빌라|오피스텔|맨션|하이츠|타운|팰리스|뜨란채))\s*(\d+호)\b', r'\1 \2', addr_str)
     
-    # 4. 하이픈 동·호수 변환 (법정동 직후에 붙는 진짜 지번 하이픈은 완벽히 보호)
+    # 5. 하이픈 동·호수 변환 (법정동 직후에 붙는 진짜 지번 하이픈은 완벽히 보호)
     def replace_hyphen(match):
         full_match = match.group(0)
         start_idx = match.start()
@@ -60,7 +98,7 @@ def pre_process_address(addr_str):
 
     addr_str = re.sub(r'\b(\d{2,4})-(\d{3,4})\b', replace_hyphen, addr_str)
     
-    # 5. 띄어쓰기 보정
+    # 6. 띄어쓰기 보정
     addr_str = re.sub(r'(\d+동)(\d+호)', r'\1 \2', addr_str)
     return addr_str
 
@@ -168,9 +206,14 @@ def master_juso_converter(keyword, original_zip=""):
         return keyword
         
     kw_str = str(keyword).strip()
-    kw_str_pre = pre_process_address(kw_str)
     
-    # 1. 회사명 / 법인명 안전 분리 추출
+    # 1. 후위 상세 정보(층수, 부서명 등) 사전 분리 추출 (Pre-extraction)
+    kw_str_cleaned, trailing_info = parse_trailing_info(kw_str)
+    
+    # 2. 주소 전처리 적용
+    kw_str_pre = pre_process_address(kw_str_cleaned)
+    
+    # 3. 회사명 / 법인명 안전 분리 추출
     corp_keywords = ['주식회사', '(주)', '유한회사', '합자회사']
     company_name = ""
     for kw in corp_keywords:
@@ -192,7 +235,7 @@ def master_juso_converter(keyword, original_zip=""):
             kw_str_pre = kw_str_pre.replace(company_name, "").strip()
             break
 
-    # 2. 고객 배송 메시지/메모 사전 분리 추출
+    # 4. 고객 배송 메시지/메모 사전 분리 추출
     memo_pattern = r'((?:검은색\s*)?(?:문앞|경비실|택배함|부재시|공동현관|현관|초인종|연락|전화|보관|비번|안전고리|문자)[^\(\)]*)'
     memo_matches = re.findall(memo_pattern, kw_str_pre)
     delivery_memo = ""
@@ -202,7 +245,7 @@ def master_juso_converter(keyword, original_zip=""):
 
     dong_ho_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\d+동\s*\d+호|\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층)'
 
-    # 3. 이미 신주소(도로명 주소)인 경우 처리
+    # 5. 이미 신주소(도로명 주소)인 경우 처리
     if is_new_road_address(kw_str_pre):
         paren_match = re.search(r'(\([^)]+\))', kw_str_pre)
         paren_str = paren_match.group(1) if paren_match else ""
@@ -232,10 +275,12 @@ def master_juso_converter(keyword, original_zip=""):
             parts.append(company_name)
         if delivery_memo:
             parts.append(delivery_memo)
+        if trailing_info:
+            parts.append(trailing_info)
 
         return pre_process_address(' '.join(parts))
 
-    # 4. 지번 주소인 경우 (건물명 및 상세 정보 추출)
+    # 6. 지번 주소인 경우 (건물명 및 상세 정보 추출)
     bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|스타힐스|캐슬|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가|타워|뜨란채))', kw_str_pre)
     orig_bldg = bldg_match.group(1) if bldg_match else ""
 
@@ -254,7 +299,10 @@ def master_juso_converter(keyword, original_zip=""):
 
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
-            base_road_addr = override_addr
+            if "상가" in kw_str:
+                base_road_addr = kw_str_pre # 상가인 경우 기존 유지
+            else:
+                base_road_addr = override_addr
             break
     else:
         url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(search_q_str)}"
@@ -296,6 +344,9 @@ def master_juso_converter(keyword, original_zip=""):
 
     if delivery_memo and delivery_memo not in base_road_addr:
         base_road_addr = f"{base_road_addr} {delivery_memo}"
+        
+    if trailing_info and trailing_info not in base_road_addr:
+        base_road_addr = f"{base_road_addr} {trailing_info}"
 
     words = base_road_addr.split()
     clean_words = []
@@ -305,83 +356,3 @@ def master_juso_converter(keyword, original_zip=""):
             clean_words.append(w)
             
     return pre_process_address(' '.join(clean_words))
-
-# --- [ Streamlit 웹 UI ] ---
-st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
-
-st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 법정동 번지(창동 808) 보존, 동·호수 포맷팅, 상품명 정리(와이드6➔A13) 및 배송 메모 후방 정렬이 이루어집니다.")
-
-uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
-
-if uploaded_file is not None:
-    df = pd.read_excel(uploaded_file)
-    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
-    st.dataframe(df.head())
-
-    if 'excel_data' not in st.session_state:
-        st.session_state.excel_data = None
-
-    if st.button("🚀 주소 변환 및 서식 적용 시작"):
-        with st.spinner("주소를 변환하는 중입니다..."):
-            if '우편번호' in df.columns:
-                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
-
-            if '선택정보' in df.columns:
-                df['선택정보'] = df['선택정보'].apply(clean_product_name)
-
-            if '배송지' in df.columns:
-                progress_bar = st.progress(0)
-                total = len(df)
-                
-                converted_addrs = []
-                for i, row in df.iterrows():
-                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
-                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
-                    converted_addrs.append(res)
-                    progress_bar.progress((i + 1) / total)
-                    
-                df['배송지'] = converted_addrs
-            else:
-                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
-
-            for col in df.columns:
-                df[col] = df[col].apply(remove_illegal_chars)
-
-            output = io.BytesIO()
-            with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                df.to_excel(writer, index=False)
-                worksheet = writer.sheets['Sheet1']
-                
-                for col in worksheet.columns:
-                    max_len = 0
-                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
-                    for cell in col:
-                        val = str(cell.value or '')
-                        length = sum(2 if ord(char) > 127 else 1 for char in val)
-                        if length > max_len:
-                            max_len = length
-                    adjusted_width = max(max_len + 4, 12)
-                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
-
-                font_size_8 = Font(size=8)
-                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
-                    worksheet.row_dimensions[row[0].row].height = 18
-                    for cell in row:
-                        cell.font = font_size_8
-                        
-                if '우편번호' in df.columns:
-                    zip_col_idx = df.columns.get_loc('우편번호') + 1
-                    for row in range(2, worksheet.max_row + 1):
-                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
-
-            st.session_state.excel_data = output.getvalue()
-        st.success("🎉 주소 변환 및 상품명 정리가 완료되었습니다!")
-
-    if st.session_state.excel_data is not None:
-        st.download_button(
-            label="📥 변환된 엑셀 파일 다운로드",
-            data=st.session_state.excel_data,
-            file_name="우편배송_변환결과_네이버.xlsx",
-            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-        )
