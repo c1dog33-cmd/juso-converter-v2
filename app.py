@@ -37,14 +37,24 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리 및 동·호수 / 띄어쓰기 / 빈 괄호 정돈 함수 ] ---
+# --- [ 주소 전처리, 띄어쓰기, 아파트명/동·호수 순서 정렬 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
-    # 1. 슬래시 형태(105/2202)를 105동 2202호로 변환
+        
+    # 1. 괄호 속 아파트 이름과 동·호수 순서 재정렬 (예: 도로명주소 + 동호수 + (법정동, 아파트명) -> 도로명주소 + 아파트명 + 동호수 + (법정동))
+    match = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동),\s*([가-힣A-Za-z0-9\s]+아파트|[가-힣A-Za-z0-9\s]+자이|[가-힣A-Za-z0-9\s]+캐슬|[가-힣A-Za-z0-9\s]+타운|[가-힣A-Za-z0-9\s]+메가트리아)\s*\)', addr_str)
+    if match:
+        base_addr = match.group(1).strip()
+        dong_ho = match.group(2).strip()
+        legal_dong = match.group(3).strip()
+        apt_name = match.group(4).strip()
+        addr_str = f"{base_addr} {apt_name} {dong_ho} ( {legal_dong} )"
+
+    # 2. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
     
-    # 2. 아파트/빌라명/빌 명 뒤의 하이픈 동·호수 변환
+    # 3. 아파트/빌라명 뒤의 하이픈 동·호수 변환
     def replace_bldg_hyphen(match):
         prefix = match.group(1)
         d = match.group(2)
@@ -54,14 +64,14 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', replace_bldg_hyphen, addr_str)
     addr_str = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', addr_str)
 
-    # 3. 한글 보조 동 포맷팅 (비동, 가동 등)
+    # 4. 한글 보조 동 포맷팅 (비동, 가동 등)
     addr_str = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
     addr_str = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', addr_str)
     
-    # 4. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정 (예: 중리캐슬501호 -> 중리캐슬 501호)
+    # 5. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정 (예: 중리캐슬501호 -> 중리캐슬 501호)
     addr_str = re.sub(r'([가-힣A-Za-z]+)(\d+호)', r'\1 \2', addr_str)
     
-    # 5. 빈 괄호 노이즈 제거 (예: () -> 삭제)
+    # 6. 빈 괄호 노이즈 제거 (예: () -> 삭제)
     addr_str = re.sub(r'\(\s*\)', '', addr_str)
     
     return ' '.join(addr_str.split())
@@ -236,7 +246,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 상세 동·호수 보존 및 구주소 지번 중복 제거 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 상세 동·호수 보존 및 아파트명 정렬 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
@@ -308,6 +318,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽수정본.xlsx",
+            file_name="우편배송_최종완벽정리_v3.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
