@@ -42,14 +42,17 @@ def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
-    # 1. 괄호 속 아파트 이름과 동·호수 순서 재정렬 (예: 도로명주소 + 동호수 + (법정동, 아파트명) -> 도로명주소 + 아파트명 + 동호수 + (법정동))
-    match = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동),\s*([가-힣A-Za-z0-9\s]+아파트|[가-힣A-Za-z0-9\s]+자이|[가-힣A-Za-z0-9\s]+캐슬|[가-힣A-Za-z0-9\s]+타운|[가-힣A-Za-z0-9\s]+메가트리아)\s*\)', addr_str)
+    # 1. 괄호 속에 법정동과 아파트명이 같이 있는 경우만 아파트명을 앞으로 빼내고 동·호수 뒤에 법정동만 남김 
+    # (예: ( 대흥동 ) 같은 순수 법정동 괄호는 건드리지 않음)
+    match = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동),\s*([^)]+)\s*\)', addr_str)
     if match:
         base_addr = match.group(1).strip()
         dong_ho = match.group(2).strip()
         legal_dong = match.group(3).strip()
         apt_name = match.group(4).strip()
-        addr_str = f"{base_addr} {apt_name} {dong_ho} ( {legal_dong} )"
+        # 아파트/건물 관련 키워드가 포함된 경우에만 정렬 실행
+        if any(keyword in apt_name for keyword in ['아파트', '자이', '캐슬', '타운', '메가트리아', '주공', '빌라', '오피스텔']):
+            addr_str = f"{base_addr} {apt_name} {dong_ho} ( {legal_dong} )"
 
     # 2. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
@@ -246,7 +249,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 상세 동·호수 보존 및 아파트명 정렬 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트명 정렬 및 상세 주소 보존 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
@@ -318,6 +321,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v3.xlsx",
+            file_name="우편배송_최종완벽정리_v4.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
