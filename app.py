@@ -37,30 +37,35 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 본문과 후위 잔여 텍스트(상호명, 메모 등) 분리 함수 ] ---
-def parse_address_with_tail(addr_str):
-    if not addr_str:
-        return addr_str, "", ""
+# --- [ 핵심: API 조회용 본문과 상세 주소(동·호수·상호명 등) 사전 격리 함수 ] ---
+def isolate_address_details(addr_str):
+    if not addr_str or pd.isna(addr_str):
+        return "", "", ""
     
     s = str(addr_str).strip()
     
-    # 1. 맨 끝에 있는 법정동 괄호(예: ( 문원동 )) 분리
+    # 1. 맨 끝 법정동 괄호 분리 (예: ( 문원동 ))
     trailing_paren = ""
     m_paren = re.search(r'(\([^)]+\))\s*$', s)
     if m_paren:
         trailing_paren = m_paren.group(1).strip()
         s = s[:m_paren.start()].strip()
         
-    # 2. 주소 핵심 요소(호, 층, 동, 번지 등) 뒤에 오는 상호명, 기업명, 메모 등을 잔여 텍스트로 포획
-    tail_text = ""
-    m_tail = re.search(r'(?:호|층|동|단독|\d+)\s+([가-힣A-Za-z0-9\.]{2,})$', s)
-    if m_tail:
-        potential_tail = m_tail.group(1)
-        if not any(w in potential_tail for w in ['로', '길', '동', '읍', '면', '리', '시', '군', '구']) or any(k in potential_tail for k in ['샵', '씨앤비', '리본도', '관리', '팀', '총무부', '지층']):
-            tail_text = potential_tail
-            s = s[:m_tail.start() + len(m_tail.group(0)) - len(potential_tail)].strip()
-
-    return s, tail_text, trailing_paren
+    # 2. API가 누락하는 상세 정보(호, 층, 동, 빌라명, 상호명, 부서명 등)를 사전에 분리 포획
+    # 주소 본문(시/도 ~ 도로명/지번 + 건물번호) 뒤에 붙는 상세 꼬리말 추출
+    detail_suffix = ""
+    
+    # 대표적인 상세 정보 패턴 분리지점 탐색 (호, 층, 단독, 또는 특정 상호/시설명 키워드 기준)
+    m_detail = re.search(r'(?:호|층|동|단독|\d+)\s+([가-힣A-Za-z0-9\.]{2,})$', s)
+    if m_detail:
+        potential_detail = m_detail.group(1)
+        if not any(w in potential_detail for w in ['로', '길', '동', '읍', '면', '리', '시', '군', '구']) or any(k in potential_detail for k in ['샵', '씨앤비', '리본도', '관리', '팀', '총무부', '지층', '학교']):
+            detail_suffix = potential_detail
+            s = s[:m_detail.start() + len(m_detail.group(0)) - len(potential_detail)].strip()
+            
+    # 추가로 건물 중간에 들어가는 소규모 빌라명(예: 까사빌)이나 호수 보호 처리
+    # API 쿼리용 순수 위치 주소(s)와 보존할 상세 정보(detail_suffix, trailing_paren) 반환
+    return s, detail_suffix, trailing_paren
 
 # --- [ 주소 전처리 및 동·호수 포맷팅 함수 ] ---
 def pre_process_address(addr_str):
@@ -183,18 +188,18 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 (Tail Capture 통합) ] ---
+# --- [ 마스터 주소 변환 엔진 (상세 주소 사전 격리 및 최종 재조합 통합) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    # 1. 주소 본문과 후위 잔여 텍스트, 법정동 괄호 분리
-    cleaned_base, tail_text, trailing_paren = parse_address_with_tail(kw_str)
+    # 1. API 조회용 순수 본문과 보존할 상세 정보(동·호수·상호명 등) 사전 격리
+    api_query_base, detail_suffix, trailing_paren = isolate_address_details(kw_str)
     
-    # 2. 주소 전처리 적용
-    cleaned_base = pre_process_address(cleaned_base)
+    # 2. API 조회용 본문 전처리
+    api_query_base = pre_process_address(api_query_base)
     
     # 3. 특수 예외 주소 사전 확인
     base_road_addr = ""
@@ -205,10 +210,10 @@ def master_juso_converter(keyword, original_zip=""):
             
     # 4. 네이버 API Geocoding 조회
     if not base_road_addr:
-        if is_new_road_address(cleaned_base):
-            base_road_addr = cleaned_base
+        if is_new_road_address(api_query_base):
+            base_road_addr = api_query_base
         else:
-            url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(cleaned_base)}"
+            url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_base)}"
             headers = {
                 "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
                 "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
@@ -227,12 +232,12 @@ def master_juso_converter(keyword, original_zip=""):
                 pass
                 
     if not base_road_addr:
-        base_road_addr = cleaned_base
+        base_road_addr = api_query_base
 
-    # 5. 최종 재조합: 변환된 도로명 주소 + 후위 잔여 텍스트(상호명 등) + 법정동 괄호
+    # 5. 최종 재조합: 변환된 도로명 주소 + 사전에 격리해 둔 상세 정보(동·호수·상호명 등) + 법정동 괄호
     parts = [base_road_addr]
-    if tail_text and tail_text not in base_road_addr:
-        parts.append(tail_text)
+    if detail_suffix and detail_suffix not in base_road_addr:
+        parts.append(detail_suffix)
     if trailing_paren and trailing_paren not in base_road_addr:
         parts.append(trailing_paren)
         
@@ -242,7 +247,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 상호명·상세 층수 유실 방지 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 상세 동·호수·상호명 유실 방지 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
@@ -314,6 +319,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_변환결과_최종완료.xlsx",
+            file_name="우편배송_변환결과_완벽보존.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
