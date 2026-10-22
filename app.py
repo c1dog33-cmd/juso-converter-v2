@@ -300,7 +300,7 @@ def master_juso_converter(keyword, original_zip=""):
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
             if "상가" in kw_str:
-                base_road_addr = kw_str_pre # 상가인 경우 기존 유지
+                base_road_addr = kw_str_pre
             else:
                 base_road_addr = override_addr
             break
@@ -356,3 +356,83 @@ def master_juso_converter(keyword, original_zip=""):
             clean_words.append(w)
             
     return pre_process_address(' '.join(clean_words))
+
+# --- [ Streamlit 웹 UI 실행 부문 ] ---
+st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
+
+st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 법정동 번지 보존, 동·호수 포맷팅, 상품명 정리 및 후위 상세 정보(지층, 부서명 등) 보존이 이루어집니다.")
+
+uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
+
+if uploaded_file is not None:
+    df = pd.read_excel(uploaded_file)
+    st.write("### 📄 업로드 데이터 미리보기 (상위 5건)")
+    st.dataframe(df.head())
+
+    if 'excel_data' not in st.session_state:
+        st.session_state.excel_data = None
+
+    if st.button("🚀 주소 변환 및 서식 적용 시작"):
+        with st.spinner("주소를 변환하는 중입니다..."):
+            if '우편번호' in df.columns:
+                df['우편번호'] = df['우편번호'].apply(fix_zipcode)
+
+            if '선택정보' in df.columns:
+                df['선택정보'] = df['선택정보'].apply(clean_product_name)
+
+            if '배송지' in df.columns:
+                progress_bar = st.progress(0)
+                total = len(df)
+                
+                converted_addrs = []
+                for i, row in df.iterrows():
+                    orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
+                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
+                    converted_addrs.append(res)
+                    progress_bar.progress((i + 1) / total)
+                    
+                df['배송지'] = converted_addrs
+            else:
+                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
+
+            for col in df.columns:
+                df[col] = df[col].apply(remove_illegal_chars)
+
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                df.to_excel(writer, index=False)
+                worksheet = writer.sheets['Sheet1']
+                
+                for col in worksheet.columns:
+                    max_len = 0
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    for cell in col:
+                        val = str(cell.value or '')
+                        length = sum(2 if ord(char) > 127 else 1 for char in val)
+                        if length > max_len:
+                            max_len = length
+                    adjusted_width = max(max_len + 4, 12)
+                    worksheet.column_dimensions[col_letter].width = min(adjusted_width, 80)
+
+                font_size_8 = Font(size=8)
+                for row in worksheet.iter_rows(min_row=1, max_row=worksheet.max_row, min_col=1, max_col=len(df.columns)):
+                    worksheet.row_dimensions[row[0].row].height = 18
+                    for cell in row:
+                        cell.font = font_size_8
+                        
+                if '우편번호' in df.columns:
+                    zip_col_idx = df.columns.get_loc('우편번호') + 1
+                    for row in range(2, worksheet.max_row + 1):
+                        worksheet.cell(row=row, column=zip_col_idx).number_format = '@'
+
+            st.session_state.excel_data = output.getvalue()
+        st.success("🎉 주소 변환 및 상품명 정리가 완료되었습니다!")
+
+    if st.session_state.excel_data is not None:
+        st.download_button(
+            label="📥 변환된 엑셀 파일 다운로드",
+            data=st.session_state.excel_data,
+            file_name="우편배송_변환결과_네이버.xlsx",
+            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        )
