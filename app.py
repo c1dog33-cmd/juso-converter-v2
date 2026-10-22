@@ -37,21 +37,27 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리 및 괄호 뒤 동·호수(호수) 정렬 함수 ] ---
+# --- [ 주소 전처리 및 괄호 뒤 동·호수(가동, 나동 등 포함) 정렬 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
     # 사용자 요청 규칙: 
-    # 주소 끝에 괄호 ( )가 있고 그 앞에 동·호수 혹은 호수만 있는 경우, 무조건 괄호 뒤로 이동시킴
-    # 예: "경기도 과천시 과천대로2길 34 902동 1306호 ( 갈현동, 과천제이드자이 )" 
-    #  -> "경기도 과천시 과천대로2길 34 ( 갈현동, 과천제이드자이 ) 902동 1306호"
-    match = re.search(r'(.+?)\s+(\d+(?:동\s*)?\d*호)\s+(\([^)]+\))$', addr_str)
+    # 주소 끝에 괄호 ( )가 있고 그 앞에 가동 308호, 902동 1306호, 혹은 호수만 있는 경우 무조건 괄호 뒤로 이동시킴
+    match = re.search(r'(.+?)\s+([가-하A-Za-z0-9]+\s*동\s*\d+(?:동)?\s*\d*호)\s+(\([^)]+\))$', addr_str)
     if match:
         base_addr = match.group(1).strip()
-        dong_ho = match.group(2).strip()
+        building_dong_ho = match.group(2).strip()
         paren_part = match.group(3).strip()
-        addr_str = f"{base_addr} {paren_part} {dong_ho}"
+        addr_str = f"{base_addr} {paren_part} {building_dong_ho}"
+    else:
+        # 일반 숫자 동·호수 및 호수만 있는 경우 대응
+        match_num = re.search(r'(.+?)\s+(\d+(?:동\s*)?\d*호)\s+(\([^)]+\))$', addr_str)
+        if match_num:
+            base_addr = match_num.group(1).strip()
+            dong_ho = match_num.group(2).strip()
+            paren_part = match_num.group(3).strip()
+            addr_str = f"{base_addr} {paren_part} {dong_ho}"
 
     # 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
@@ -250,10 +256,9 @@ st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍�
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
 st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 괄호 뒤 동·호수 정렬 처리가 이루어집니다.")
 
-uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
+uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
 if uploaded_file is not None:
-    # Handle both xls and xlsx
     try:
         df = pd.read_excel(uploaded_file)
     except Exception:
@@ -325,6 +330,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v9.xlsx",
+            file_name="우편배송_최종완벽정리_v10.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
