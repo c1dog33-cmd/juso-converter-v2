@@ -21,7 +21,7 @@ def fix_zipcode(val):
 SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12 (불로동, 신검단중앙역풍경채어바니티)",
     "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
-    "율곡동 415": "경상북도 김천시 혁신8로 66",  # 율곡동 415번지 아파트 전용 도로명 매핑
+    "율곡동 415": "경상북도 김천시 혁신8로 66",
 }
 
 # --- [ openpyxl 제어 문자 에러 방지 함수 ] ---
@@ -37,39 +37,30 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 후위 상세 정보 및 법정동 괄호 분리 함수 ] ---
-def parse_trailing_info(addr_str):
+# --- [ 주소 본문과 후위 잔여 텍스트(상호명, 메모 등) 분리 함수 ] ---
+def parse_address_with_tail(addr_str):
     if not addr_str:
         return addr_str, "", ""
     
-    # 1. 맨 끝에 있는 법정동 괄호(예: ( 문원동 ))를 먼저 안전하게 분리
+    s = str(addr_str).strip()
+    
+    # 1. 맨 끝에 있는 법정동 괄호(예: ( 문원동 )) 분리
     trailing_paren = ""
-    paren_match = re.search(r'(\([^)]+\))\s*$', addr_str)
-    if paren_match:
-        trailing_paren = paren_match.group(1).strip()
-        addr_str = addr_str[:paren_match.start()].strip()
+    m_paren = re.search(r'(\([^)]+\))\s*$', s)
+    if m_paren:
+        trailing_paren = m_paren.group(1).strip()
+        s = s[:m_paren.start()].strip()
         
-    # 2. 괄호가 제거된 텍스트의 우측 끝에서부터 층수, 부서명, 메모 키워드 탐색
-    words = addr_str.split()
-    trailing_words = []
-    if len(words) > 1:
-        for i in range(1, min(4, len(words) + 1)):
-            w = words[-i]
-            if any(term in w for term in ['층', '지층', '부', '팀', '문앞', '경비실', '택배함', '부재시', '비번', '총무']):
-                trailing_words.insert(0, w)
-            else:
-                if trailing_words and (w in ['지하', '1', '2', '3', '4', '5', '상세', '사무실']):
-                    trailing_words.insert(0, w)
-                else:
-                    break
-                    
-    trailing_info = ""
-    cleaned = addr_str
-    if trailing_words:
-        trailing_info = " ".join(trailing_words)
-        cleaned = " ".join(words[:-len(trailing_words)])
-        
-    return cleaned, trailing_info, trailing_paren
+    # 2. 주소 핵심 요소(호, 층, 동, 번지 등) 뒤에 오는 상호명, 기업명, 메모 등을 잔여 텍스트로 포획
+    tail_text = ""
+    m_tail = re.search(r'(?:호|층|동|단독|\d+)\s+([가-힣A-Za-z0-9\.]{2,})$', s)
+    if m_tail:
+        potential_tail = m_tail.group(1)
+        if not any(w in potential_tail for w in ['로', '길', '동', '읍', '면', '리', '시', '군', '구']) or any(k in potential_tail for k in ['샵', '씨앤비', '리본도', '관리', '팀', '총무부', '지층']):
+            tail_text = potential_tail
+            s = s[:m_tail.start() + len(m_tail.group(0)) - len(potential_tail)].strip()
+
+    return s, tail_text, trailing_paren
 
 # --- [ 주소 전처리 및 동·호수 포맷팅 함수 ] ---
 def pre_process_address(addr_str):
@@ -78,7 +69,7 @@ def pre_process_address(addr_str):
     # 1. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
     
-    # 2. 아파트/빌라명/빌 명 뒤의 하이픈 동·호수 변환 (예: 대우아파트 304-505호 -> 304동 505호)
+    # 2. 아파트/빌라명/빌 명 뒤의 하이픈 동·호수 변환
     def replace_bldg_hyphen(match):
         prefix = match.group(1)
         d = match.group(2)
@@ -88,18 +79,13 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', replace_bldg_hyphen, addr_str)
     addr_str = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', addr_str)
 
-    # 3. 건물 동 번호 포맷팅 (한글 보조 동: 비동, 가동 등)
+    # 3. 한글 보조 동 포맷팅 (비동, 가동 등)
     addr_str = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
     addr_str = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', addr_str)
     
-    # 4. 아파트 이름과 호수가 띄어쓰기 없이 붙어 있는 경우 포맷팅
-    addr_str = re.sub(r'([가-힣A-Za-z0-9]+(?:아파트|스타힐스|캐슬|빌라|오피스텔|맨션|하이츠|타운|팰리스|뜨란채))\s*(\d+호)\b', r'\1 \2', addr_str)
-    
-    # 5. 띄어쓰기 보정
-    addr_str = re.sub(r'(\d+동)(\d+호)', r'\1 \2', addr_str)
     return addr_str
 
-# --- [ 상품명 정제 함수 (와이드6 ➔ A13 매핑 포함) ] ---
+# --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -197,153 +183,66 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 ] ---
+# --- [ 마스터 주소 변환 엔진 (Tail Capture 통합) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    # 1. 후위 상세 정보 및 맨 뒤 법정동 괄호 분리 추출
-    kw_str_cleaned, trailing_info, trailing_paren = parse_trailing_info(kw_str)
+    # 1. 주소 본문과 후위 잔여 텍스트, 법정동 괄호 분리
+    cleaned_base, tail_text, trailing_paren = parse_address_with_tail(kw_str)
     
     # 2. 주소 전처리 적용
-    kw_str_pre = pre_process_address(kw_str_cleaned)
+    cleaned_base = pre_process_address(cleaned_base)
     
-    # 3. 회사명 / 법인명 안전 분리 추출
-    corp_keywords = ['주식회사', '(주)', '유한회사', '합자회사']
-    company_name = ""
-    for kw in corp_keywords:
-        if kw in kw_str_pre:
-            idx = kw_str_pre.find(kw)
-            prefix_part = kw_str_pre[:idx].strip()
-            words = prefix_part.split()
-            corp_words = []
-            for w in reversed(words):
-                if any(char.isdigit() for char in w) or '층' in w or '호' in w or '동' in w:
-                    break
-                corp_words.insert(0, w)
-                if len(corp_words) >= 3:
-                    break
-            if corp_words:
-                company_name = " ".join(corp_words) + " " + kw
-            else:
-                company_name = kw
-            kw_str_pre = kw_str_pre.replace(company_name, "").strip()
-            break
-
-    # 4. 상호명, 학교명, 기업명, 배송 메모 잔여 텍스트 일괄 보존을 위한 포획
-    # (지정된 키워드 외에도 주소 본문 뒤에 붙는 모든 잔여 텍스트를 후위 정보로 통합 관리)
-    rest_text = kw_str_pre
-    
-    # 도로명/지번 앞부분(기본 주소 구조)만 남기고 나머지 명칭 추출
-    # 예: "경기도 평택시 비전동 1091-2 강일타운 506호 니모네모왁싱샵" -> 기본 주소 추출 후 "니모네모왁싱샵" 보존
-    bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|스타힐스|캐슬|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가|타워|뜨란채|빌|타운))', rest_text)
-    orig_bldg = bldg_match.group(1) if bldg_match else ""
-
-    dong_ho_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\d+동\s*\d+호|\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층)'
-    dong_ho_matches = re.findall(dong_ho_pattern, rest_text)
-
-    # 5. 이미 신주소(도로명 주소)인 경우 처리
-    if is_new_road_address(kw_str_pre):
-        for dh in dong_ho_matches:
-            rest_text = rest_text.replace(dh, '')
-        if orig_bldg:
-            rest_text = rest_text.replace(orig_bldg, '')
-
-        base_region = re.sub(r'\s+0\b', '', rest_text)
-        base_region = ' '.join(base_region.split())
-
-        parts = [base_region]
-        if orig_bldg:
-            parts.append(orig_bldg)
-        if dong_ho_matches:
-            parts.append(" ".join(dong_ho_matches))
-        if company_name:
-            parts.append(company_name)
-        if trailing_info:
-            parts.append(trailing_info)
-        if trailing_paren:
-            parts.append(trailing_paren)
-
-        return pre_process_address(' '.join(parts))
-
-    # 6. 지번 주소인 경우 (네이버 API 조회)
-    extra_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\d+동\s*\d+호|\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|생활관\s*[가-힣A-Za-z0-9]+)'
-    extra_details = re.findall(extra_pattern, kw_str_pre)
-    
-    temp_query_str = kw_str_pre
-    for ext in extra_details:
-        temp_query_str = temp_query_str.replace(ext, '')
-    if orig_bldg:
-        temp_query_str = re.sub(r'\b' + re.escape(orig_bldg) + r'\b', '', temp_query_str)
-    temp_query_str = re.sub(r'\s+0\b', '', temp_query_str)
-    base_region = ' '.join(temp_query_str.split())
-    
-    search_q_str = f"{base_region} {orig_bldg}" if orig_bldg else base_region
-
+    # 3. 특수 예외 주소 사전 확인
+    base_road_addr = ""
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
-            if "상가" in kw_str:
-                base_road_addr = kw_str_pre
-            else:
-                base_road_addr = override_addr
+            base_road_addr = override_addr
             break
-    else:
-        url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(search_q_str)}"
-        headers = {
-            "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
-            "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
-        }
-        
-        base_road_addr = ""
-        try:
-            response = requests.get(url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                res = response.json()
-                addresses = res.get('addresses', [])
-                if addresses:
-                    addr_info = addresses[0]
-                    road_addr = addr_info.get('roadAddress', '')
-                    jibun_addr = addr_info.get('jibunAddress', '')
-                    base_road_addr = road_addr if road_addr else jibun_addr
-        except Exception:
-            pass
-
-    if not base_road_addr:
-        base_road_addr = kw_str_pre
-
-    if orig_bldg and orig_bldg not in base_road_addr:
-        base_road_addr = f"{base_road_addr} {orig_bldg}"
-
-    for detail in extra_details:
-        detail_clean = pre_process_address(detail.strip())
-        if detail_clean and detail_clean not in base_road_addr:
-            base_road_addr = f"{base_road_addr} {detail_clean}"
-
-    if company_name and company_name not in base_road_addr:
-        base_road_addr = f"{base_road_addr} {company_name}"
-        
-    if trailing_info and trailing_info not in base_road_addr:
-        base_road_addr = f"{base_road_addr} {trailing_info}"
-        
-    if trailing_paren and trailing_paren not in base_road_addr:
-        base_road_addr = f"{base_road_addr} {trailing_paren}"
-
-    words = base_road_addr.split()
-    clean_words = []
-    for w in words:
-        clean_w = w.strip('(),')
-        if not clean_words or clean_w != clean_words[-1].strip('(),'):
-            clean_words.append(w)
             
-    return pre_process_address(' '.join(clean_words))
+    # 4. 네이버 API Geocoding 조회
+    if not base_road_addr:
+        if is_new_road_address(cleaned_base):
+            base_road_addr = cleaned_base
+        else:
+            url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(cleaned_base)}"
+            headers = {
+                "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
+                "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
+            }
+            try:
+                response = requests.get(url, headers=headers, timeout=5)
+                if response.status_code == 200:
+                    res = response.json()
+                    addresses = res.get('addresses', [])
+                    if addresses:
+                        addr_info = addresses[0]
+                        road_addr = addr_info.get('roadAddress', '')
+                        jibun_addr = addr_info.get('jibunAddress', '')
+                        base_road_addr = road_addr if road_addr else jibun_addr
+            except Exception:
+                pass
+                
+    if not base_road_addr:
+        base_road_addr = cleaned_base
+
+    # 5. 최종 재조합: 변환된 도로명 주소 + 후위 잔여 텍스트(상호명 등) + 법정동 괄호
+    parts = [base_road_addr]
+    if tail_text and tail_text not in base_road_addr:
+        parts.append(tail_text)
+    if trailing_paren and trailing_paren not in base_road_addr:
+        parts.append(trailing_paren)
+        
+    return pre_process_address(' '.join(parts))
 
 # --- [ Streamlit 웹 UI 실행 부문 ] ---
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 법정동 번지 보존, 동·호수 포맷팅, 상품명 정리 및 상호명·층수·기관명 유실 방지 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 상호명·상세 층수 유실 방지 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
@@ -415,6 +314,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_변환결과_최종.xlsx",
+            file_name="우편배송_변환결과_최종완료.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
