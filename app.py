@@ -47,19 +47,18 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'\b(\d+\s*동|[가-하]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
     
     # 3. 아파트 이름과 호수가 띄어쓰기 없이 붙어 있는 경우 포맷팅 (예: 부향하나로아파트407호 -> 부향하나로아파트 407호)
-    addr_str = re.sub(r'([가-힣A-Za-z0-9]+(?:아파트|캐슬|빌라|오피스텔|맨션|하이츠|타운|팰리스))\s*(\d+호)\b', r'\1 \2', addr_str)
+    addr_str = re.sub(r'([가-힣A-Za-z0-9]+(?:아파트|스타힐스|캐슬|빌라|오피스텔|맨션|하이츠|타운|팰리스|뜨란채))\s*(\d+호)\b', r'\1 \2', addr_str)
     
-    # 4. 하이픈 동·호수 변환 (법정동 지번 하이픈은 보호하고, 건물 뒤 상세 주소만 변환)
+    # 4. 하이픈 동·호수 변환 (법정동 직후에 붙는 진짜 지번 하이픈은 완벽히 보호)
     def replace_hyphen(match):
         full_match = match.group(0)
         start_idx = match.start()
         prefix = addr_str[:start_idx]
-        has_bldg_before = bool(re.search(r'(아파트|캐슬|빌라|오피스텔|맨션|하이츠|타운|팰리스|타워|빌딩|프라자)', prefix))
-        if not has_bldg_before:
-            return full_match  # 지번 하이픈 보호
+        if re.search(r'[가-힣]+(?:동|리|가)\s+$', prefix):
+            return full_match  # 지번 하이픈 보호 (예: 사당동 190-152)
         return f"{match.group(1)}동 {match.group(2)}호"
 
-    addr_str = re.sub(r'\b(\d{2,3})-(\d{3,4})\b', replace_hyphen, addr_str)
+    addr_str = re.sub(r'\b(\d{2,4})-(\d{3,4})\b', replace_hyphen, addr_str)
     
     # 5. 띄어쓰기 보정
     addr_str = re.sub(r'(\d+동)(\d+호)', r'\1 \2', addr_str)
@@ -163,7 +162,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 (회사명 및 배송 메모 분리/후방 정렬 포함) ] ---
+# --- [ 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -171,7 +170,7 @@ def master_juso_converter(keyword, original_zip=""):
     kw_str = str(keyword).strip()
     kw_str_pre = pre_process_address(kw_str)
     
-    # 1. 회사명 / 법인명 안전 분리 추출 (예: "에이블릭 코리아 주식회사")
+    # 1. 회사명 / 법인명 안전 분리 추출
     corp_keywords = ['주식회사', '(주)', '유한회사', '합자회사']
     company_name = ""
     for kw in corp_keywords:
@@ -210,7 +209,7 @@ def master_juso_converter(keyword, original_zip=""):
         if paren_str:
             kw_str_pre = kw_str_pre.replace(paren_str, '')
 
-        bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가|타워))', kw_str_pre)
+        bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|스타힐스|캐슬|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가|타워|뜨란채))', kw_str_pre)
         orig_bldg = bldg_match.group(1) if bldg_match else ""
         if orig_bldg:
             kw_str_pre = re.sub(r'\b' + re.escape(orig_bldg) + r'\b', '', kw_str_pre)
@@ -237,7 +236,7 @@ def master_juso_converter(keyword, original_zip=""):
         return pre_process_address(' '.join(parts))
 
     # 4. 지번 주소인 경우 (건물명 및 상세 정보 추출)
-    bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가|타워))', kw_str_pre)
+    bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|스타힐스|캐슬|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가|타워|뜨란채))', kw_str_pre)
     orig_bldg = bldg_match.group(1) if bldg_match else ""
 
     extra_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\d+동\s*\d+호|\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
@@ -311,7 +310,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트/빌딩명 보존, 동·호수 포맷팅(가동308➔가동 308호), 상품명 정리(와이드6➔A13), 기업명 보호 및 배송 메모 후방 정렬이 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트/브랜드명(서원마을뜨란채 등) 보존, 동·호수/하이픈 포맷팅, 상품명 정리(와이드6➔A13), 기업명 보호 및 배송 메모 후방 정렬이 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
