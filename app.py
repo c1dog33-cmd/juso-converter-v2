@@ -37,19 +37,23 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리, 띄어쓰기, 아파트명 정렬 및 이중 표기 제거 함수 ] ---
+# --- [ 주소 전처리, 아파트명 정렬 및 중복 방지 장치 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
     # 1. 괄호 속에 법정동과 건물명이 같이 있는 경우 (예: ( 수서동, 강남 더샵 포레스트 ))
-    match_comma = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동),\s*([^)]+)\s*\)', addr_str)
+    match_comma = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', addr_str)
     if match_comma:
         base_addr = match_comma.group(1).strip()
         dong_ho = match_comma.group(2).strip()
         legal_dong = match_comma.group(3).strip()
         bldg_name = match_comma.group(4).strip()
-        addr_str = f"{base_addr} {bldg_name} {dong_ho} ( {legal_dong} )"
+        # [중복 방지 안전 장치] base_addr에 이미 건물명이 포함되어 있지 않은 경우에만 추가
+        if bldg_name not in base_addr:
+            addr_str = f"{base_addr} {bldg_name} {dong_ho} ( {legal_dong} )"
+        else:
+            addr_str = f"{base_addr} {dong_ho} ( {legal_dong} )"
     else:
         # 2. 괄호 속에 단독 건물명이 있는 경우 (예: ( 고성코아루더파크 ))
         match_single = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([^)]+)\s*\)', addr_str)
@@ -58,9 +62,12 @@ def pre_process_address(addr_str):
             dong_ho = match_single.group(2).strip()
             paren_content = match_single.group(3).strip()
             if not re.match(r'^[가-힣]+동$', paren_content):
-                addr_str = f"{base_addr} {paren_content} {dong_ho}"
+                if paren_content not in base_addr:
+                    addr_str = f"{base_addr} {paren_content} {dong_ho}"
+                else:
+                    addr_str = f"{base_addr} {dong_ho}"
 
-    # 3. 샘머리아파트 등 중복 이중 표기 제거 (예: 샘머리아파트2단지 샘머리아파트 -> 샘머리아파트2단지)
+    # 3. 샘머리아파트 등 중복 이중 표기 제거
     addr_str = re.sub(r'(샘머리아파트\d*단지)\s+(샘머리아파트)', r'\1', addr_str)
     addr_str = re.sub(r'(샘머리아파트)\s+(샘머리아파트\d*단지)', r'\2', addr_str)
 
@@ -259,7 +266,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트명 정렬 및 이중 표기 제거 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트명 정렬 및 중복 방지 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
@@ -331,6 +338,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v7.xlsx",
+            file_name="우편배송_최종완벽정리_v8.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
