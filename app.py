@@ -37,7 +37,7 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리 및 동·호수 포맷팅 함수 ] ---
+# --- [ 주소 전처리 및 동·호수 / 띄어쓰기 / 빈 괄호 정돈 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
@@ -58,7 +58,13 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
     addr_str = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', addr_str)
     
-    return addr_str
+    # 4. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정 (예: 중리캐슬501호 -> 중리캐슬 501호)
+    addr_str = re.sub(r'([가-힣A-Za-z]+)(\d+호)', r'\1 \2', addr_str)
+    
+    # 5. 빈 괄호 노이즈 제거 (예: () -> 삭제)
+    addr_str = re.sub(r'\(\s*\)', '', addr_str)
+    
+    return ' '.join(addr_str.split())
 
 # --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
@@ -158,7 +164,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 (구주소 지번 중복 제거 완벽 반영) ] ---
+# --- [ 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -168,20 +174,17 @@ def master_juso_converter(keyword, original_zip=""):
     api_query_base = kw_str
     trailing_paren = ""
     
-    # 법정동 괄호 분리
     m_paren = re.search(r'(\([^)]+\))\s*$', kw_str)
     if m_paren:
         trailing_paren = m_paren.group(1).strip()
         api_query_base = api_query_base[:m_paren.start()].strip()
 
-    # 특수 예외 주소 확인
     base_road_addr = ""
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
             base_road_addr = override_addr
             break
             
-    # 네이버 API Geocoding 조회
     if not base_road_addr:
         query_target = api_query_base
         clean_for_api = re.sub(r'\s+\d+호.*$', '', query_target)
@@ -211,13 +214,11 @@ def master_juso_converter(keyword, original_zip=""):
     if not base_road_addr:
         base_road_addr = api_query_base
 
-    # 상세 정보 추출 및 중복 옛날 지번(예: 서외리 190-1, 변동 254-329 등) 필터링 제거
     tail_part = kw_str
     for part in base_road_addr.split():
         if part in tail_part:
             tail_part = tail_part.replace(part, "", 1)
             
-    # 핵심 필터링: 신주소 변환 시 유입되는 옛날 구주소 지번 패턴(동/리 + 번지)을 말끔히 제거
     tail_part = re.sub(r'\s+[가-힣]+(?:동|리)\s+\d+(?:-\d+)?', '', tail_part)
     tail_part = ' '.join(tail_part.split())
     
@@ -227,7 +228,9 @@ def master_juso_converter(keyword, original_zip=""):
     elif trailing_paren and trailing_paren not in base_road_addr:
         parts.append(trailing_paren)
 
-    return pre_process_address(' '.join(parts))
+    final_str = pre_process_address(' '.join(parts))
+    final_str = re.sub(r'\(\s*\)', '', final_str)
+    return ' '.join(final_str.split())
 
 # --- [ Streamlit 웹 UI 실행 부문 ] ---
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
@@ -305,6 +308,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_변환결과_최종완벽정리.xlsx",
+            file_name="우편배송_최종완벽수정본.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
