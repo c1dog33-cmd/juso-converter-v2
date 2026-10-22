@@ -42,17 +42,22 @@ def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
-    # 1. 괄호 속에 법정동과 아파트명이 같이 있는 경우만 아파트명을 앞으로 빼내고 동·호수 뒤에 법정동만 남김 
-    # (예: ( 대흥동 ) 같은 순수 법정동 괄호는 건드리지 않음)
-    match = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동),\s*([^)]+)\s*\)', addr_str)
+    # 1. 괄호 속 건물/아파트 이름 처리 (예: ( 고성코아루더파크 ) 또는 ( 하계동, 중계주공9단지아파트 ))
+    match = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([^)]+)\s*\)', addr_str)
     if match:
         base_addr = match.group(1).strip()
         dong_ho = match.group(2).strip()
-        legal_dong = match.group(3).strip()
-        apt_name = match.group(4).strip()
-        # 아파트/건물 관련 키워드가 포함된 경우에만 정렬 실행
-        if any(keyword in apt_name for keyword in ['아파트', '자이', '캐슬', '타운', '메가트리아', '주공', '빌라', '오피스텔']):
-            addr_str = f"{base_addr} {apt_name} {dong_ho} ( {legal_dong} )"
+        paren_content = match.group(3).strip()
+        
+        # 순수 법정동 괄호(예: 대방동, 대흥동)가 아닌 경우에만 아파트명을 앞으로 정렬
+        if ',' in paren_content or not re.match(r'^[가-힣]+동$', paren_content):
+            if ',' in paren_content:
+                parts = [p.strip() for p in paren_content.split(',')]
+                legal_dong = parts[0]
+                bldg_name = parts[1]
+                addr_str = f"{base_addr} {bldg_name} {dong_ho} ( {legal_dong} )"
+            else:
+                addr_str = f"{base_addr} {paren_content} {dong_ho}"
 
     # 2. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
@@ -321,6 +326,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v4.xlsx",
+            file_name="우편배송_최종완벽정리_v5.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
