@@ -37,7 +37,7 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리 및 괄호 뒤 동·호수 정렬 함수 (원본 보존 조건 포함) ] ---
+# --- [ 주소 전처리 및 괄호 뒤 동·호수 정렬 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
@@ -61,7 +61,7 @@ def pre_process_address(addr_str):
         else:
             s = f"{base_addr} {dong_ho} ( {legal_dong} )"
     else:
-        # 3. 괄호가 맨 뒤에 있을 때 그 앞의 동·호수 (가동, 나동, a동, 영문·한글 및 숫자 동·호수, 호수 단독)를 괄호 뒤로 이동
+        # 3. 괄호가 맨 뒤에 있을 때 그 앞의 동·호수 (가동, 나동, a동 등)를 괄호 뒤로 이동
         match_building = re.search(r'(.+?)\s+([가-힣a-zA-Z0-9]+\s*동\s*\d+(?:동)?\s*\d*호)\s+(\([^)]+\))$', s)
         if match_building:
             base_addr = match_building.group(1).strip()
@@ -210,6 +210,10 @@ def master_juso_converter(keyword, original_zip=""):
         
     kw_str = str(keyword).strip()
     
+    # [핵심 보호 필터] 이미 중간에 괄호가 있고 맨 끝에 동·호수/호수가 완벽히 있는 주소는 API 변환 생략 및 원본 보존
+    if re.search(r'\([^)]+\)\s+.*(?:동|호)\s*$', kw_str):
+        return pre_process_address(kw_str)
+    
     api_query_base = kw_str
     trailing_paren = ""
     
@@ -351,6 +355,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v13.xlsx",
+            file_name="우편배송_최종완벽정리_v14.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
