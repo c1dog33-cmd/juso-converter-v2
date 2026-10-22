@@ -36,19 +36,29 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리 및 동·호수 포맷팅 함수 ] ---
+# --- [ 주소 전처리 및 동·호수 포맷팅 함수 (지번 하이픈 보호 적용) ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
     # 1. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
-    # 2. 하이픈 동·호수 형태(101-305) 변환
-    addr_str = re.sub(r'\b(\d+)-(\d{3,4})\b', r'\1동 \2호', addr_str)
+    
+    # 2. 하이픈 동·호수 변환 (법정동 바로 뒤에 붙는 진짜 지번은 보호하고, 건물 뒤 상세 주소만 변환)
+    def replace_hyphen(match):
+        full_match = match.group(0)
+        start_idx = match.start()
+        prefix = addr_str[:start_idx]
+        if re.search(r'[가-힣]+(?:동|리|읍|면)\s+$', prefix):
+            return full_match  # 지번 하이픈은 그대로 유지
+        return f"{match.group(1)}동 {match.group(2)}호"
+
+    addr_str = re.sub(r'\b(\d+)-(\d{3,4})\b', replace_hyphen, addr_str)
+    
     # 3. 띄어쓰기 보정 (711동904호 -> 711동 904호)
     addr_str = re.sub(r'(\d+동)(\d+호)', r'\1 \2', addr_str)
     return addr_str
 
-# --- [ 완벽한 상품명 정제 함수 ] ---
+# --- [ 상품명 정제 함수 (와이드6 ➔ A13 매핑 추가) ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -87,6 +97,7 @@ def clean_product_name(val):
         elif raw_model == 'V50': target_model = 'V50'
         elif raw_model == '노트20울트라': target_model = '노트20울트라'
         elif raw_model == '와이드5': target_model = 'A22'
+        elif raw_model == '와이드6': target_model = 'A13'
         else: target_model = raw_model
 
         qty = 1
@@ -137,6 +148,7 @@ def clean_product_name(val):
     target = ' '.join(target.split())
     
     if target == '와이드5': target = 'A22'
+    elif target == '와이드6': target = 'A13'
     
     result_str = f"{target}[{qty}]" if qty > 1 else target
     if '택배' in s or '택배배송' in s: result_str = f"{result_str} 택배"
@@ -144,7 +156,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 (배송 메모 분리 및 후방 정렬 포함) ] ---
+# --- [ 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -152,7 +164,7 @@ def master_juso_converter(keyword, original_zip=""):
     kw_str = str(keyword).strip()
     kw_str_pre = pre_process_address(kw_str)
     
-    # 1. 고객 배송 메시지/메모 사전 분리 추출 (예: "검은색 문앞보관", "문앞에보관요", "부재시 경비실" 등)
+    # 1. 고객 배송 메시지/메모 사전 분리 추출
     memo_pattern = r'((?:검은색\s*)?(?:문앞|경비실|택배함|부재시|공동현관|현관|초인종|연락|전화|보관|비번|안전고리|문자)[^\(\)]*)'
     memo_matches = re.findall(memo_pattern, kw_str_pre)
     delivery_memo = ""
@@ -160,9 +172,11 @@ def master_juso_converter(keyword, original_zip=""):
         delivery_memo = max(memo_matches, key=len).strip()
         kw_str_pre = kw_str_pre.replace(delivery_memo, '').strip()
 
+    # 공통 동·호수 추출 패턴 (붙어 있는 호수 407호, 501호 등 완벽 포착)
+    dong_ho_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\d+동\s*\d+호|\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층)'
+
     # 2. 이미 신주소(도로명 주소)인 경우 처리
     if is_new_road_address(kw_str_pre):
-        # 건물명, 괄호, 동·호수 추출 후 재조립
         paren_match = re.search(r'(\([^)]+\))', kw_str_pre)
         paren_str = paren_match.group(1) if paren_match else ""
         if paren_str:
@@ -173,7 +187,6 @@ def master_juso_converter(keyword, original_zip=""):
         if orig_bldg:
             kw_str_pre = re.sub(r'\b' + re.escape(orig_bldg) + r'\b', '', kw_str_pre)
 
-        dong_ho_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층)'
         dong_ho_matches = re.findall(dong_ho_pattern, kw_str_pre)
         for dh in dong_ho_matches:
             kw_str_pre = kw_str_pre.replace(dh, '')
@@ -197,10 +210,9 @@ def master_juso_converter(keyword, original_zip=""):
     bldg_match = re.search(r'([가-힣A-Za-z0-9]+(?:아파트|리버스트|빌리지|빌라|오피스텔|맨션|하이츠|타운|팰리스|주공|LH|단지|고시원|프라자|빌딩|상가))', kw_str_pre)
     orig_bldg = bldg_match.group(1) if bldg_match else ""
 
-    extra_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
+    extra_pattern = r'(?:(?<!-)\b\d+\s*동\s*\d+\s*호?|(?<!-)\b\d+\s*동|\b\d+\s*호|\d+동\s*\d+호|\d+호|\b[A-Za-z가나다라마바사아자차카타파하]\s*동\s*\d+\s*호?|\b[A-Za-z가나다라마바사아자차카타파하]\s*동|\d+층|\([^)]+\)|생활관\s*[가-힣A-Za-z0-9]+|\b[가-힣]+상가.*)'
     extra_details = re.findall(extra_pattern, kw_str_pre)
     
-    # API 검색용 스마트 쿼리 구성
     temp_query_str = kw_str_pre
     for ext in extra_details:
         temp_query_str = temp_query_str.replace(ext, '')
@@ -236,11 +248,9 @@ def master_juso_converter(keyword, original_zip=""):
         except Exception:
             pass
 
-    # 4. API 변환 실패 시 원본 전처리 주소 사용
     if not base_road_addr:
         base_road_addr = kw_str_pre
 
-    # 5. 건물명 보존 및 상세 정보 결합
     if orig_bldg and orig_bldg not in base_road_addr:
         base_road_addr = f"{base_road_addr} {orig_bldg}"
 
@@ -252,11 +262,9 @@ def master_juso_converter(keyword, original_zip=""):
         if detail_clean and detail_clean not in base_road_addr:
             base_road_addr = f"{base_road_addr} {detail_clean}"
 
-    # 6. 최종 조립 단계에서 배송 메시지를 무조건 맨 뒤로 결합
     if delivery_memo and delivery_memo not in base_road_addr:
         base_road_addr = f"{base_road_addr} {delivery_memo}"
 
-    # 7. 중복 연속 단어 제거 및 포맷팅
     words = base_road_addr.split()
     clean_words = []
     for w in words:
@@ -270,7 +278,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트/빌리지/고시원/프라자명 보존, 중복 괄호 제거, 상품명 정리 및 배송 메시지 후방 정렬이 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트/빌리지/고시원/프라자명 보존, 중복 괄호 제거, 상품명 정리(와이드6➔A13) 및 배송 메시지 후방 정렬이 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
