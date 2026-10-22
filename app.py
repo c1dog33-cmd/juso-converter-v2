@@ -37,7 +37,7 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리, 띄어쓰기, 아파트명/동·호수 순서 정렬 함수 ] ---
+# --- [ 주소 전처리, 띄어쓰기, 아파트명 정렬 및 이중 표기 제거 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
@@ -57,14 +57,17 @@ def pre_process_address(addr_str):
             base_addr = match_single.group(1).strip()
             dong_ho = match_single.group(2).strip()
             paren_content = match_single.group(3).strip()
-            # 순수 법정동 괄호(예: 대방동, 대흥동)가 아닌 경우에만 앞으로 정렬
             if not re.match(r'^[가-힣]+동$', paren_content):
                 addr_str = f"{base_addr} {paren_content} {dong_ho}"
 
-    # 3. 슬래시 형태(105/2202)를 105동 2202호로 변환
+    # 3. 샘머리아파트 등 중복 이중 표기 제거 (예: 샘머리아파트2단지 샘머리아파트 -> 샘머리아파트2단지)
+    addr_str = re.sub(r'(샘머리아파트\d*단지)\s+(샘머리아파트)', r'\1', addr_str)
+    addr_str = re.sub(r'(샘머리아파트)\s+(샘머리아파트\d*단지)', r'\2', addr_str)
+
+    # 4. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
     
-    # 4. 아파트/빌라명 뒤의 하이픈 동·호수 변환
+    # 5. 아파트/빌라명 뒤의 하이픈 동·호수 변환
     def replace_bldg_hyphen(match):
         prefix = match.group(1)
         d = match.group(2)
@@ -74,14 +77,14 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', replace_bldg_hyphen, addr_str)
     addr_str = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', addr_str)
 
-    # 5. 한글 보조 동 포맷팅 (비동, 가동 등)
+    # 6. 한글 보조 동 포맷팅 (비동, 가동 등)
     addr_str = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
     addr_str = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', addr_str)
     
-    # 6. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정 (예: 중리캐슬501호 -> 중리캐슬 501호)
+    # 7. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정 (예: 중리캐슬501호 -> 중리캐슬 501호)
     addr_str = re.sub(r'([가-힣A-Za-z]+)(\d+호)', r'\1 \2', addr_str)
     
-    # 7. 빈 괄호 노이즈 제거 (예: () -> 삭제)
+    # 8. 빈 괄호 노이즈 제거 (예: () -> 삭제)
     addr_str = re.sub(r'\(\s*\)', '', addr_str)
     
     return ' '.join(addr_str.split())
@@ -256,7 +259,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트명 정렬 및 상세 주소 보존 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환, 아파트명 정렬 및 이중 표기 제거 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls)을 업로드하세요", type=["xlsx", "xls"])
 
@@ -328,6 +331,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v6.xlsx",
+            file_name="우편배송_최종완벽정리_v7.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
