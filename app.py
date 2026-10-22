@@ -37,14 +37,16 @@ def is_new_road_address(addr_str):
     road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
     return bool(re.search(road_pattern, addr_str))
 
-# --- [ 주소 전처리 및 괄호 뒤 동·호수(가동, 나동 등 포함) 정렬 함수 ] ---
+# --- [ 주소 전처리 및 괄호 뒤 동·호수(가동, 나동, a동, 영문·한글 전용) 정렬 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
     # 사용자 요청 규칙: 
-    # 주소 끝에 괄호 ( )가 있고 그 앞에 가동 308호, 902동 1306호, 혹은 호수만 있는 경우 무조건 괄호 뒤로 이동시킴
-    match = re.search(r'(.+?)\s+([가-하A-Za-z0-9]+\s*동\s*\d+(?:동)?\s*\d*호)\s+(\([^)]+\))$', addr_str)
+    # 주소 끝에 괄호 ( )가 있고 그 앞에 가동/나동/a동/A동 등 한글·영문 동 및 호수가 있는 경우 무조건 괄호 뒤로 이동시킴
+    # 예: "경상북도 포항시 북구 중흥로255번길 33 미주 가동 308호 ( 죽도동, 미주맨션 )"
+    #  -> "경상북도 포항시 북구 중흥로255번길 33 미주 ( 죽도동, 미주맨션 ) 가동 308호"
+    match = re.search(r'(.+?)\s+([가-힣a-zA-Z0-9]+\s*동\s*\d+(?:동)?\s*\d*호)\s+(\([^)]+\))$', addr_str)
     if match:
         base_addr = match.group(1).strip()
         building_dong_ho = match.group(2).strip()
@@ -72,7 +74,7 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', replace_bldg_hyphen, addr_str)
     addr_str = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', addr_str)
 
-    # 한글 보조 동 포맷팅 (비동, 가동 등)
+    # 한글 및 영문 보조 동 포맷팅 (가동, a동 등)
     addr_str = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
     addr_str = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', addr_str)
     
@@ -254,7 +256,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 괄호 뒤 동·호수 정렬 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 가동·나동·a동을 포함한 괄호 뒤 동·호수 정렬 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -330,6 +332,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v10.xlsx",
+            file_name="우편배송_최종완벽정리_v11.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
