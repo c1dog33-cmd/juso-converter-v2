@@ -42,27 +42,29 @@ def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
-    # 1. 괄호 속 건물/아파트 이름 처리 (예: ( 고성코아루더파크 ) 또는 ( 하계동, 중계주공9단지아파트 ))
-    match = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([^)]+)\s*\)', addr_str)
-    if match:
-        base_addr = match.group(1).strip()
-        dong_ho = match.group(2).strip()
-        paren_content = match.group(3).strip()
-        
-        # 순수 법정동 괄호(예: 대방동, 대흥동)가 아닌 경우에만 아파트명을 앞으로 정렬
-        if ',' in paren_content or not re.match(r'^[가-힣]+동$', paren_content):
-            if ',' in paren_content:
-                parts = [p.strip() for p in paren_content.split(',')]
-                legal_dong = parts[0]
-                bldg_name = parts[1]
-                addr_str = f"{base_addr} {bldg_name} {dong_ho} ( {legal_dong} )"
-            else:
+    # 1. 괄호 속에 법정동과 건물명이 같이 있는 경우 (예: ( 수서동, 강남 더샵 포레스트 ))
+    match_comma = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동),\s*([^)]+)\s*\)', addr_str)
+    if match_comma:
+        base_addr = match_comma.group(1).strip()
+        dong_ho = match_comma.group(2).strip()
+        legal_dong = match_comma.group(3).strip()
+        bldg_name = match_comma.group(4).strip()
+        addr_str = f"{base_addr} {bldg_name} {dong_ho} ( {legal_dong} )"
+    else:
+        # 2. 괄호 속에 단독 건물명이 있는 경우 (예: ( 고성코아루더파크 ))
+        match_single = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([^)]+)\s*\)', addr_str)
+        if match_single:
+            base_addr = match_single.group(1).strip()
+            dong_ho = match_single.group(2).strip()
+            paren_content = match_single.group(3).strip()
+            # 순수 법정동 괄호(예: 대방동, 대흥동)가 아닌 경우에만 앞으로 정렬
+            if not re.match(r'^[가-힣]+동$', paren_content):
                 addr_str = f"{base_addr} {paren_content} {dong_ho}"
 
-    # 2. 슬래시 형태(105/2202)를 105동 2202호로 변환
+    # 3. 슬래시 형태(105/2202)를 105동 2202호로 변환
     addr_str = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', addr_str)
     
-    # 3. 아파트/빌라명 뒤의 하이픈 동·호수 변환
+    # 4. 아파트/빌라명 뒤의 하이픈 동·호수 변환
     def replace_bldg_hyphen(match):
         prefix = match.group(1)
         d = match.group(2)
@@ -72,14 +74,14 @@ def pre_process_address(addr_str):
     addr_str = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', replace_bldg_hyphen, addr_str)
     addr_str = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', addr_str)
 
-    # 4. 한글 보조 동 포맷팅 (비동, 가동 등)
+    # 5. 한글 보조 동 포맷팅 (비동, 가동 등)
     addr_str = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', addr_str)
     addr_str = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', addr_str)
     
-    # 5. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정 (예: 중리캐슬501호 -> 중리캐슬 501호)
+    # 6. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정 (예: 중리캐슬501호 -> 중리캐슬 501호)
     addr_str = re.sub(r'([가-힣A-Za-z]+)(\d+호)', r'\1 \2', addr_str)
     
-    # 6. 빈 괄호 노이즈 제거 (예: () -> 삭제)
+    # 7. 빈 괄호 노이즈 제거 (예: () -> 삭제)
     addr_str = re.sub(r'\(\s*\)', '', addr_str)
     
     return ' '.join(addr_str.split())
@@ -326,6 +328,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v5.xlsx",
+            file_name="우편배송_최종완벽정리_v6.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
