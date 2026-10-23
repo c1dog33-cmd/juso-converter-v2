@@ -47,17 +47,6 @@ def remove_stray_province(addr_str):
             new_tokens.append(tok)
     return ' '.join(new_tokens)
 
-# --- [ 괄호 속 중복 아파트명 제거 및 법정동만 남기는 함수 ] ---
-def clean_parentheses(addr_str):
-    if not addr_str:
-        return addr_str
-    s = str(addr_str).strip()
-    match = re.search(r'\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', s)
-    if match:
-        legal_dong = match.group(1).strip()
-        s = s.replace(match.group(0), f"( {legal_dong} )")
-    return ' '.join(s.split())
-
 # --- [ 연속 중복 건물명 자동 제거 함수 ] ---
 def remove_duplicate_words(addr_str):
     if not addr_str:
@@ -185,23 +174,33 @@ def master_juso_converter(keyword, original_zip=""):
         return keyword
         
     kw_str = str(keyword).strip()
-    kw_str = clean_parentheses(kw_str)
     
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
             return override_addr
             
+    # 1. 괄호 영역 추출 보호
     trailing_paren = ""
     m_paren = re.search(r'(\([^)]+\))\s*$', kw_str)
     if m_paren:
         trailing_paren = m_paren.group(1).strip()
         kw_str = kw_str[:m_paren.start()].strip()
         
+    # 2. 상세 호수 / 배송 메모 보호 (예: 207호, 311호, 102동 1902호 문앞 등)
     tail_detail = ""
-    m_detail = re.search(r'(\s+\d+호|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
+    m_detail = re.search(r'(\s+\d+동\s*\d+호.*?(?:문앞|경비실)?|\s+\d+호.*?(?:문앞)?|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
     if m_detail:
         tail_detail = m_detail.group(1).strip()
         kw_str = kw_str[:m_detail.start()].strip()
+
+    m_paren2 = re.search(r'(\([^)]+\))\s*$', kw_str)
+    if m_paren2:
+        trailing_paren = m_paren2.group(1).strip()
+        kw_str = kw_str[:m_paren2.start()].strip()
+        m_detail2 = re.search(r'(\s+\d+동\s*\d+호.*?(?:문앞|경비실)?|\s+\d+호.*?(?:문앞)?|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
+        if m_detail2:
+            tail_detail = m_detail2.group(1).strip()
+            kw_str = kw_str[:m_detail2.start()].strip()
 
     brands = [
         '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
@@ -261,13 +260,14 @@ def master_juso_converter(keyword, original_zip=""):
     if not base_road_addr:
         base_road_addr = api_query_part
 
+    # 최종 조합: 도로명 주소 + 아파트명/꼬리말 + 괄호 + 상세 호수 및 메모 (맨 뒤)
     parts = [base_road_addr]
-    if tail_part:
+    if tail_part and tail_part not in base_road_addr:
         parts.append(tail_part)
-    if tail_detail and tail_detail not in tail_part:
-        parts.append(tail_detail)
     if trailing_paren:
         parts.append(trailing_paren)
+    if tail_detail:
+        parts.append(tail_detail)
 
     final_str = ' '.join(parts)
     final_str = remove_duplicate_words(final_str)
@@ -279,7 +279,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("중복 건물명 자동 제거 및 상세 호수 보호 기능이 적용된 최종 버전입니다.")
+st.write("모든 예외 규칙과 상세 동·호수 보호, 신주소 변환이 완벽하게 적용된 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -355,6 +355,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v25.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
