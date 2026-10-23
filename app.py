@@ -172,7 +172,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 완벽 안전 마스터 주소 변환 엔진 ] ---
+# --- [ 최종 완벽 안전 마스터 주소 변환 엔진 (구주소 패턴만 변환, 신주소 및 그외는 원본 보존) ] ---
 def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -202,21 +202,16 @@ def ultimate_master_converter(keyword, original_zip=""):
             tail_detail = m_detail2.group(1).strip()
             kw_str = kw_str[:m_detail2.start()].strip()
 
-    # 2. [시/도] + [시/군/구] 패턴이 명확한 경우에만 API 변환 수행, 그 외는 원본 보존
-    has_target_pattern = bool(re.search(r'[가-힣]+(시|도)\s+[가-힣]+(시|군|구)(\s+[가-힣]+구)?', kw_str))
+    # 2. 핵심 원칙: 원본 주소에 [시/도] + [시/군/구] + [동/읍/면/리] (구주소 형태) 패턴이 명확한 경우에만 변환!
+    # 그 외(이미 신주소이거나 도로명만 있는 경우 등)는 네이버 API를 찾지 않고 원본 그대로 보존
+    has_jibun_pattern = bool(re.search(r'([가-힣]+(시|도))\s+([가-힣]+(시|군|구)?(\s+[가-힣]+구)?)\s+([가-힣]+(동|읍|면|리))\s+\d+', kw_str))
     
     base_road_addr = ""
     tail_part = ""
     
-    if has_target_pattern:
-        m_road = re.search(r'([로길]\s*\d+(?:-\d+)?)', kw_str)
+    if has_jibun_pattern:
         m_jibun = re.search(r'([가-힣]+동\s*\d+(?:-\d+)?)', kw_str)
-        
-        if m_road:
-            end_pos = m_road.end()
-            api_query_part = kw_str[:end_pos].strip()
-            tail_part = kw_str[end_pos:].strip()
-        elif m_jibun:
+        if m_jibun:
             end_pos = m_jibun.end()
             api_query_part = kw_str[:end_pos].strip()
             tail_part = kw_str[end_pos:].strip()
@@ -246,6 +241,7 @@ def ultimate_master_converter(keyword, original_zip=""):
         if not base_road_addr:
             base_road_addr = api_query_part
     else:
+        # 구주소 패턴이 아니면(이미 신주소이거나 특수 주소면) API 호출 없이 원본 주소 그대로 보존
         base_road_addr = kw_str
 
     full_base_text = f"{base_road_addr} {tail_part}"
@@ -270,7 +266,7 @@ def ultimate_master_converter(keyword, original_zip=""):
                 if is_legal_dong(inner_text):
                     final_paren = paren_str
                 else:
-                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제', '스윗닷홈', '아이파크']):
+                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제', '스윗닷홈', '아이파크', '한서아파트']):
                         final_paren = ""
                     else:
                         final_paren = paren_str
@@ -293,7 +289,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("표준 행정구역 패턴 주소만 정확히 변환하고 그 외는 원본을 완벽히 보존하는 최종 안전 버전입니다.")
+st.write("구주소(시/도 + 시/군/구 + 동/읍/면/리) 패턴만 신주소로 변환하고, 신주소 및 그외는 원본 그대로 완벽 보존하는 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -369,6 +365,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_FlexibleSafe.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_JibunOnly.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
