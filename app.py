@@ -184,32 +184,26 @@ def ultimate_master_converter(keyword, original_zip=""):
         if target_key in kw_str:
             return override_addr
             
-    # 1. 상세 동·호수 및 괄호 미리 안전 분리
-    tail_detail = ""
-    m_detail = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
-    if m_detail:
-        tail_detail = m_detail.group(1).strip()
-        kw_str = kw_str[:m_detail.start()].strip()
-
+    # 1. 괄호 먼저 안전 분리
     parens = re.findall(r'\([^)]+\)', kw_str)
     for p in parens:
         kw_str = kw_str.replace(p, "").strip()
     paren_str = parens[-1] if parens else ""
 
-    if not tail_detail:
-        m_detail2 = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
-        if m_detail2:
-            tail_detail = m_detail2.group(1).strip()
-            kw_str = kw_str[:m_detail2.start()].strip()
+    # 2. 상세 동·호수 및 배송 메모(문앞 등) 추출 (위치 무관)
+    tail_detail = ""
+    m_detail = re.search(r'(\d+동\s*\d+호.*|[A-Z가-힣]\s*동\s*\d+호.*|\d+\s*호.*)', kw_str)
+    if m_detail:
+        tail_detail = m_detail.group(1).strip()
+        kw_str = kw_str[:m_detail.start()].strip()
 
-    # 2. 구주소 패턴 검사 및 번지수(예: 554-38)까지 정확히 끊어서 API 쿼리 추출
+    # 3. 구주소 패턴 검사 및 번지수 기준 API 쿼리 추출
     has_jibun_pattern = bool(re.search(r'([가-힣]+(시|도))\s+([가-힣]+(시|군|구)?(\s+[가-힣]+구)?)\s+([가-힣]+(동|읍|면|리))\s+\d+', kw_str))
     
     base_road_addr = ""
     tail_part = ""
     
     if has_jibun_pattern:
-        # 정확히 동 이름과 번지수(숫자 및 하이픈)까지만 API 조회용으로 끊음
         m_jibun = re.search(r'([가-힣]+동\s*\d+(?:-\d+)?)', kw_str)
         if m_jibun:
             end_pos = m_jibun.end()
@@ -245,7 +239,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 
     full_base_text = f"{base_road_addr} {tail_part}"
 
-    # 3. 괄호 정돈 규칙 (아파트/건물명 괄호 보존)
+    # 4. 괄호 정돈 규칙 (쉼표 법정동 규칙 및 아파트명 괄호 보존)
     final_paren = ""
     if paren_str:
         match_p1 = re.search(r'\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', paren_str)
@@ -270,6 +264,7 @@ def ultimate_master_converter(keyword, original_zip=""):
                     else:
                         final_paren = paren_str
 
+    # 5. 최종 조립 순서: [기본 주소] -> [괄호] -> [상세 동·호수 및 문앞 메모]
     parts = [base_road_addr]
     if tail_part and tail_part not in base_road_addr:
         parts.append(tail_part)
@@ -288,7 +283,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("구주소 번지수 기준 정확한 API 연동 및 아파트 이름 보존 기능이 적용된 최종 마스터 버전입니다.")
+st.write("동·호수 및 문앞 배송 메모가 괄호 뒤로 완벽하게 정렬되는 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -364,6 +359,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_Perfect.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_TailSorted.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
