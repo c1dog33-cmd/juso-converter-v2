@@ -172,7 +172,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 완벽 안전 마스터 주소 변환 엔진 (구주소 패턴만 변환, 신주소 및 그외는 원본 보존) ] ---
+# --- [ 최종 완벽 안전 마스터 주소 변환 엔진 ] ---
 def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -202,8 +202,7 @@ def ultimate_master_converter(keyword, original_zip=""):
             tail_detail = m_detail2.group(1).strip()
             kw_str = kw_str[:m_detail2.start()].strip()
 
-    # 2. 핵심 원칙: 원본 주소에 [시/도] + [시/군/구] + [동/읍/면/리] (구주소 형태) 패턴이 명확한 경우에만 변환!
-    # 그 외(이미 신주소이거나 도로명만 있는 경우 등)는 네이버 API를 찾지 않고 원본 그대로 보존
+    # 2. 구주소 패턴 검사 (시/도 + 시/군/구 + 동/읍/면/리)
     has_jibun_pattern = bool(re.search(r'([가-힣]+(시|도))\s+([가-힣]+(시|군|구)?(\s+[가-힣]+구)?)\s+([가-힣]+(동|읍|면|리))\s+\d+', kw_str))
     
     base_road_addr = ""
@@ -241,12 +240,11 @@ def ultimate_master_converter(keyword, original_zip=""):
         if not base_road_addr:
             base_road_addr = api_query_part
     else:
-        # 구주소 패턴이 아니면(이미 신주소이거나 특수 주소면) API 호출 없이 원본 주소 그대로 보존
         base_road_addr = kw_str
 
     full_base_text = f"{base_road_addr} {tail_part}"
 
-    # 3. 괄호 정돈 규칙 (쉼표가 있는 경우 무조건 법정동만 남기기)
+    # 3. 괄호 정돈 규칙 (아파트/건물명 괄호는 오산시 주소처럼 본문에 없을 경우 삭제하지 않고 안전하게 보존)
     final_paren = ""
     if paren_str:
         match_p1 = re.search(r'\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', paren_str)
@@ -266,10 +264,12 @@ def ultimate_master_converter(keyword, original_zip=""):
                 if is_legal_dong(inner_text):
                     final_paren = paren_str
                 else:
-                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제', '스윗닷홈', '아이파크', '한서아파트']):
+                    # 오직 본문(full_base_text)에 해당 건물명이 실제로 포함되어 있는 경우에만 중복으로 간주해 삭제하고, 
+                    # 포함되지 않은 경우(예: (원동두산.동아아파트))는 원본 그대로 보존함!
+                    if inner_text in full_base_text:
                         final_paren = ""
                     else:
-                        final_paren = paren_str
+                        final_paren = paren_str  # 아파트 이름 괄호 보존!
 
     parts = [base_road_addr]
     if tail_part and tail_part not in base_road_addr:
@@ -289,7 +289,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("구주소(시/도 + 시/군/구 + 동/읍/면/리) 패턴만 신주소로 변환하고, 신주소 및 그외는 원본 그대로 완벽 보존하는 최종 버전입니다.")
+st.write("구주소 신주소 변환 및 아파트 이름 괄호 보존 기능이 완벽하게 적용된 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -326,7 +326,7 @@ if uploaded_file is not None:
                     
                 df['배송지'] = converted_addrs
             else:
-                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
+5                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
 
             for col in df.columns:
                 df[col] = df[col].apply(remove_illegal_chars)
@@ -365,6 +365,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_JibunOnly.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_AptProtected.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
