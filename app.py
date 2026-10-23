@@ -17,7 +17,6 @@ def fix_zipcode(val):
     val_str = str(val).split('.')[0].strip()
     return val_str.zfill(5) if val_str else ""
 
-# --- [ 특정 예외 주소 매핑 사전 ] ---
 SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12 (불로동, 신검단중앙역풍경채어바니티)",
     "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
@@ -173,7 +172,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 통합 마스터 주소 변환 엔진 (구주소 우선 검색 + 후처리 파이프라인) ] ---
+# --- [ 최종 통합 마스터 주소 변환 엔진 (구주소 우선 검색 + 무조건 법정동만 남기기) ] ---
 def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -203,7 +202,7 @@ def ultimate_master_converter(keyword, original_zip=""):
             tail_detail = m_detail2.group(1).strip()
             kw_str = kw_str[:m_detail2.start()].strip()
 
-    # 2. 구주소(지번) 또는 도로명 주소 패턴을 최우선으로 인식하여 API 검색용 쿼리 추출
+    # 2. 구주소(지번) 또는 도로명 주소 패턴 최우선 인식 후 네이버 API 조회
     m_road = re.search(r'([로길]\s*\d+(?:-\d+)?)', kw_str)
     m_jibun = re.search(r'([가-힣]+동\s*\d+(?:-\d+)?)', kw_str)
     
@@ -219,7 +218,6 @@ def ultimate_master_converter(keyword, original_zip=""):
         api_query_part = kw_str
         tail_part = ""
 
-    # 3. 네이버 지오코딩 API 호출 (구주소/도로명 우선 검색)
     base_road_addr = api_query_part
     url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_part)}"
     headers = {
@@ -244,23 +242,18 @@ def ultimate_master_converter(keyword, original_zip=""):
 
     full_base_text = f"{base_road_addr} {tail_part}"
 
-    # 4. 괄호 정돈 규칙 1 & 규칙 2 후처리 적용
+    # 3. 괄호 정돈 규칙 (쉼표가 있는 경우 무조건 법정동만 남기기)
     final_paren = ""
     if paren_str:
         match_p1 = re.search(r'\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', paren_str)
         if match_p1:
             part1 = match_p1.group(1).strip()
             part2 = match_p1.group(2).strip()
+            # 무조건 법정동이 포함되어 있으면 해당 법정동만 남김
             if is_legal_dong(part1):
-                if part2 in full_base_text or any(b in part2 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트', '라비앙로제', '스윗닷홈']):
-                    final_paren = f"( {part1} )"
-                else:
-                    final_paren = f"( {part1}, {part2} )"
+                final_paren = f"( {part1} )"
             elif is_legal_dong(part2):
-                if part1 in full_base_text or any(b in part1 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트', '라비앙로제', '스윗닷홈']):
-                    final_paren = f"( {part2} )"
-                else:
-                    final_paren = f"( {part2}, {part1} )"
+                final_paren = f"( {part2} )"
             else:
                 final_paren = paren_str
         else:
@@ -270,8 +263,8 @@ def ultimate_master_converter(keyword, original_zip=""):
                 if is_legal_dong(inner_text):
                     final_paren = paren_str
                 else:
-                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제', '스윗닷홈']):
-                        final_paren = ""
+                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제', '스윗닷홈', '아이파크']):
+                        final_paren = ""  # 중복 건물명 통째로 삭제
                     else:
                         final_paren = paren_str
 
@@ -293,7 +286,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("구주소 우선 검색 파이프라인 및 모든 괄호 규칙이 완벽하게 적용된 최종 마스터 버전입니다.")
+st.write("구주소 우선 검색 및 (법정동, 건물명) 입력 시 무조건 법정동만 남기도록 강화된 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -369,6 +362,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_PipelineMaster.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_Unconditional.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
