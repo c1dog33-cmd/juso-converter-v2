@@ -202,13 +202,14 @@ def ultimate_master_converter(keyword, original_zip=""):
             tail_detail = m_detail2.group(1).strip()
             kw_str = kw_str[:m_detail2.start()].strip()
 
-    # 2. 구주소 패턴 검사 (시/도 + 시/군/구 + 동/읍/면/리)
+    # 2. 구주소 패턴 검사 및 번지수(예: 554-38)까지 정확히 끊어서 API 쿼리 추출
     has_jibun_pattern = bool(re.search(r'([가-힣]+(시|도))\s+([가-힣]+(시|군|구)?(\s+[가-힣]+구)?)\s+([가-힣]+(동|읍|면|리))\s+\d+', kw_str))
     
     base_road_addr = ""
     tail_part = ""
     
     if has_jibun_pattern:
+        # 정확히 동 이름과 번지수(숫자 및 하이픈)까지만 API 조회용으로 끊음
         m_jibun = re.search(r'([가-힣]+동\s*\d+(?:-\d+)?)', kw_str)
         if m_jibun:
             end_pos = m_jibun.end()
@@ -287,7 +288,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("구주소/신주소 완벽 분리 및 아파트 이름 보존 기능이 적용된 최종 마스터 버전입니다.")
+st.write("구주소 번지수 기준 정확한 API 연동 및 아파트 이름 보존 기능이 적용된 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -363,6 +364,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_Clean.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_Perfect.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
