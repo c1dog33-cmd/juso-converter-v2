@@ -46,10 +46,6 @@ def remove_stray_province(addr_str):
             new_tokens.append(tok)
     return ' '.join(new_tokens)
 
-def is_legal_dong(text):
-    t = text.strip()
-    return bool(re.search(r'[가-힣]+(동|읍|면|리)$', t)) and len(t) <= 6
-
 def preprocess_attached_dong(addr_str):
     if not addr_str:
         return addr_str
@@ -184,7 +180,7 @@ def ultimate_master_converter(keyword, original_zip=""):
         if target_key in kw_str:
             return override_addr
             
-    # 1. 괄호 먼저 안전 분리
+    # 1. 괄호 먼저 안전 분리 (축소 규칙 없이 원본 괄호 내용 그대로 보존)
     parens = re.findall(r'\([^)]+\)', kw_str)
     for p in parens:
         kw_str = kw_str.replace(p, "").strip()
@@ -237,39 +233,12 @@ def ultimate_master_converter(keyword, original_zip=""):
     else:
         base_road_addr = kw_str
 
-    full_base_text = f"{base_road_addr} {tail_part}"
-
-    # 4. 괄호 정돈 규칙 (쉼표 법정동 규칙 및 아파트명 괄호 보존)
-    final_paren = ""
-    if paren_str:
-        match_p1 = re.search(r'\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', paren_str)
-        if match_p1:
-            part1 = match_p1.group(1).strip()
-            part2 = match_p1.group(2).strip()
-            if is_legal_dong(part1):
-                final_paren = f"( {part1} )"
-            elif is_legal_dong(part2):
-                final_paren = f"( {part2} )"
-            else:
-                final_paren = paren_str
-        else:
-            match_p2 = re.search(r'\(\s*([^)]+)\s*\)', paren_str)
-            if match_p2:
-                inner_text = match_p2.group(1).strip()
-                if is_legal_dong(inner_text):
-                    final_paren = paren_str
-                else:
-                    if inner_text in full_base_text:
-                        final_paren = ""
-                    else:
-                        final_paren = paren_str
-
-    # 5. 최종 조립 순서: [기본 주소] -> [괄호] -> [상세 동·호수 및 문앞 메모]
+    # 4. 최종 조립 순서: [기본 주소] -> [괄호(원본 유지)] -> [상세 동·호수 및 메모]
     parts = [base_road_addr]
     if tail_part and tail_part not in base_road_addr:
         parts.append(tail_part)
-    if final_paren:
-        parts.append(final_paren)
+    if paren_str:
+        parts.append(paren_str)
     if tail_detail:
         parts.append(tail_detail)
 
@@ -283,7 +252,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("동·호수 및 문앞 배송 메모가 괄호 뒤로 완벽하게 정렬되는 최종 마스터 버전입니다.")
+st.write("괄호(아파트명/법정동) 원본 보존 및 동·호수 맨 뒤 정렬 기능이 적용된 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -359,6 +328,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_TailSorted.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_ParenPreserved.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
