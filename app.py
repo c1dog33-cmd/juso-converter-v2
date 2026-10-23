@@ -47,6 +47,16 @@ def remove_stray_province(addr_str):
             new_tokens.append(tok)
     return ' '.join(new_tokens)
 
+# --- [ 건물명과 붙어있는 동(C동, 가동 등) 자동 띄어쓰기 교정 ] ---
+def preprocess_attached_dong(addr_str):
+    if not addr_str:
+        return addr_str
+    s = str(addr_str).strip()
+    s = re.sub(r'([가-힣]+팰리스)([A-Z가-힣\d]동)', r'\1 \2', s)
+    s = re.sub(r'([가-힣]+하이츠)([A-Z가-힣\d]동)', r'\1 \2', s)
+    s = re.sub(r'([가-힣]+아파트)([A-Z가-힣\d]동)', r'\1 \2', s)
+    return s
+
 # --- [ 연속 중복 건물명 자동 제거 함수 ] ---
 def remove_duplicate_words(addr_str):
     if not addr_str:
@@ -81,18 +91,14 @@ def clean_product_name(val):
         has_film = True
 
     target_texts = [s]
-    if '//' in s:
-        target_texts.insert(0, s.split('//')[-1])
-    if '모델선택:' in s:
-        target_texts.insert(0, s.split('모델선택:')[-1])
-    if '/' in s:
-        target_texts.insert(0, s.split('/')[-1])
+    if '//' in s: target_texts.insert(0, s.split('//')[-1])
+    if '모델선택:' in s: target_texts.insert(0, s.split('모델선택:')[-1])
+    if '/' in s: target_texts.insert(0, s.split('/')[-1])
 
     smartphone_match = None
     for t in target_texts:
         smartphone_match = re.search(r'(S\s*10\s*5G|S\s*10\s*플러스|S\s*20\s*플러스|S\s*20\s*울트라|S\s*22\s*플러스|S\s*22\s*울트라|노트\s*10\s*플러스|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', t, re.IGNORECASE)
-        if smartphone_match:
-            break
+        if smartphone_match: break
 
     if not smartphone_match:
         smartphone_match = re.search(r'(S\s*10\s*5G|S\s*10\s*플러스|S\s*20\s*플러스|S\s*20\s*울트라|S\s*22\s*플러스|S\s*22\s*울트라|노트\s*10\s*플러스|노트\s*20\s*울트라|노트\s*20\s*플러스|노트\s*\d+\s*울트라|노트\s*\d+\s*플러스|노트\s*\d+|S\s*\d+(?:\s*플러스|\s*울트라|\s*5G|\s*엣지)?|A\s*\d+|Z\s*(?:플립|폴드)\s*\d*|와이드\s*\d+|N\s*\d+|V\s*50S|V\s*50|V\s*\d+|벨벳|윙)', s, re.IGNORECASE)
@@ -117,8 +123,7 @@ def clean_product_name(val):
             parts = s.split('☞')
             after = parts[1].strip() if len(parts) > 1 else ""
             qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
-            if qty_match:
-                qty = int(qty_match.group(1))
+            if qty_match: qty = int(qty_match.group(1))
         
         res = f"{target_model}[{qty}]" if qty > 1 else target_model
         if has_film: res += " +필름"
@@ -136,8 +141,7 @@ def clean_product_name(val):
         base = parts[0].strip()
         after = parts[1].strip() if len(parts) > 1 else ""
         qty_match = re.match(r'^(\d+)\s*(EA|개)?', after, re.IGNORECASE)
-        if qty_match:
-            qty = int(qty_match.group(1))
+        if qty_match: qty = int(qty_match.group(1))
     else:
         base = s
         
@@ -174,6 +178,7 @@ def ultimate_master_converter(keyword, original_zip=""):
         return keyword
         
     kw_str = str(keyword).strip()
+    kw_str = preprocess_attached_dong(kw_str)
     
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
@@ -185,16 +190,24 @@ def ultimate_master_converter(keyword, original_zip=""):
         trailing_paren = m_paren.group(1).strip()
         kw_str = kw_str[:m_paren.start()].strip()
         
+    # 기숙사, 생활관, 동/호수 상세 정보 보호 패턴 확장
     tail_detail = ""
-    m_detail = re.search(r'(\s+\d+동\s*\d+호.*?(?:문앞|경비실)?|\s+\d+호.*?(?:문앞)?|\s+지하\s*\d+호|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
+    m_detail = re.search(r'(\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+[A-Z가-힣]\s*동\s*\d+\s*호.*|\s+\d+동\s*\d+\s*호.*|\s+\d+\s*호.*)\s*$', kw_str)
     if m_detail:
         tail_detail = m_detail.group(1).strip()
         kw_str = kw_str[:m_detail.start()].strip()
+        
+    if not trailing_paren:
+        m_paren2 = re.search(r'(\([^)]+\))\s*$', kw_str)
+        if m_paren2:
+            trailing_paren = m_paren2.group(1).strip()
+            kw_str = kw_str[:m_paren2.start()].strip()
 
     brands = [
         '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
         '자이', '푸르지오', '힐스테이트', '래미안', '아이파크', '캐슬', 'e편한세상', '편한세상',
-        '더샵', '데시앙', '뷰', '써밋', '리슈빌', '하늘채', '포레나', '우미린', '트루엘', '코아루', '휴먼시아'
+        '더샵', '데시앙', '뷰', '써밋', '리슈빌', '하늘채', '포레나', '우미린', '트루엘', '코아루', '휴먼시아',
+        '팰리스', '하이츠', '주택', '원룸', '기숙사', '생활관', '사택'
     ]
     
     cut_idx = len(kw_str)
@@ -212,20 +225,6 @@ def ultimate_master_converter(keyword, original_zip=""):
         q = re.sub(r'\s+\d+호.*$', '', q)
         api_query_part = q
         tail_part = kw_str[len(q):].strip()
-
-    tail_part = re.sub(r'\s+[가-힣]+동\s+\d+(?:-\d+)?(?=\s+\d+동)', '', tail_part)
-
-    for b in brands:
-        if b in tail_part:
-            match = re.search(rf'{b}\s+(?:[가-힣]+동\s+)?(\d{{1,4}})-(\d{{1,4}})', tail_part)
-            if match:
-                d_num = match.group(1)
-                h_num = match.group(2)
-                sub_pattern = rf'{b}\s+(?:[가-힣]+동\s+)?{d_num}-{h_num}'
-                tail_part = re.sub(sub_pattern, rf'{b} {d_num}동 {h_num}호', tail_part)
-                
-    tail_part = re.sub(r'([가-힣A-Za-z0-9]+아파트)\s+(\d{1,4})-(\d{1,4})', r'\1 \2동 \3호', tail_part)
-    tail_part = re.sub(r'\b(\d{1,4})-(\d{1,4})\s*호?\b', r'\1동 \2호', tail_part)
 
     base_road_addr = api_query_part
     url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_part)}"
@@ -249,7 +248,7 @@ def ultimate_master_converter(keyword, original_zip=""):
     if not base_road_addr:
         base_road_addr = api_query_part
 
-    # --- [ 엄격한 2가지 괄호 정리 규칙 적용 ] ---
+    # --- [ 엄격한 2가지 괄호 정돈 규칙 적용 ] ---
     if trailing_paren:
         match_p1 = re.search(r'\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', trailing_paren)
         if match_p1:
@@ -260,7 +259,8 @@ def ultimate_master_converter(keyword, original_zip=""):
             if match_p2:
                 inner_text = match_p2.group(1).strip()
                 if '동' not in inner_text:
-                    if inner_text in kw_str or inner_text in tail_part:
+                    main_text = f"{base_road_addr} {tail_part} {tail_detail}"
+                    if inner_text in main_text:
                         trailing_paren = ""
 
     parts = [base_road_addr]
@@ -281,7 +281,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엄격한 괄호 정돈 규칙(규칙 1, 규칙 2)이 완벽히 적용된 최종 버전입니다.")
+st.write("기숙사/생활관 보호 및 모든 정돈 규칙이 완벽하게 통합된 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -357,6 +357,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_Strict.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_Master.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
