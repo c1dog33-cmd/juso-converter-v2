@@ -202,9 +202,8 @@ def ultimate_master_converter(keyword, original_zip=""):
             tail_detail = m_detail2.group(1).strip()
             kw_str = kw_str[:m_detail2.start()].strip()
 
-    # 2. [시/군/구] + [구/군] + [동/읍/면/리] 패턴이 명확히 존재하는 경우에만 API 변환 수행
-    # 그 외의 주소는 원본 형태를 그대로 유지함
-    has_target_pattern = bool(re.search(r'[시|군|구]\s+[가-힣]+[구|군]\s+[가-힣]+[동|읍|면|리]', kw_str))
+    # 2. [시/도] + [시/군/구] 패턴이 명확한 경우에만 API 변환 수행, 그 외는 원본 보존
+    has_target_pattern = bool(re.search(r'[가-힣]+(시|도)\s+[가-힣]+(시|군|구)(\s+[가-힣]+구)?', kw_str))
     
     base_road_addr = ""
     tail_part = ""
@@ -247,7 +246,6 @@ def ultimate_master_converter(keyword, original_zip=""):
         if not base_road_addr:
             base_road_addr = api_query_part
     else:
-        # 조건에 맞지 않으면 원본 주소 그대로 보존
         base_road_addr = kw_str
 
     full_base_text = f"{base_road_addr} {tail_part}"
@@ -273,7 +271,7 @@ def ultimate_master_converter(keyword, original_zip=""):
                     final_paren = paren_str
                 else:
                     if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제', '스윗닷홈', '아이파크']):
-                        final_paren = ""  # 중복 건물명 통째로 삭제
+                        final_paren = ""
                     else:
                         final_paren = paren_str
 
@@ -295,7 +293,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("시·구·동 / 시·구·읍·리 패턴이 명확한 주소만 변환하고 그 외는 원본을 완벽히 보존하는 최종 안전 버전입니다.")
+st.write("표준 행정구역 패턴 주소만 정확히 변환하고 그 외는 원본을 완벽히 보존하는 최종 안전 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -371,6 +369,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_StrictSafe.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_FlexibleSafe.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
