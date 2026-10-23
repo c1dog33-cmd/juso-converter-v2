@@ -172,7 +172,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 통합 마스터 주소 변환 엔진 (구주소 우선 검색 + 무조건 법정동만 남기기) ] ---
+# --- [ 최종 완벽 안전 마스터 주소 변환 엔진 ] ---
 def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -202,43 +202,53 @@ def ultimate_master_converter(keyword, original_zip=""):
             tail_detail = m_detail2.group(1).strip()
             kw_str = kw_str[:m_detail2.start()].strip()
 
-    # 2. 구주소(지번) 또는 도로명 주소 패턴 최우선 인식 후 네이버 API 조회
-    m_road = re.search(r'([로길]\s*\d+(?:-\d+)?)', kw_str)
-    m_jibun = re.search(r'([가-힣]+동\s*\d+(?:-\d+)?)', kw_str)
+    # 2. [시/군/구] + [구/군] + [동/읍/면/리] 패턴이 명확히 존재하는 경우에만 API 변환 수행
+    # 그 외의 주소는 원본 형태를 그대로 유지함
+    has_target_pattern = bool(re.search(r'[시|군|구]\s+[가-힣]+[구|군]\s+[가-힣]+[동|읍|면|리]', kw_str))
     
-    if m_road:
-        end_pos = m_road.end()
-        api_query_part = kw_str[:end_pos].strip()
-        tail_part = kw_str[end_pos:].strip()
-    elif m_jibun:
-        end_pos = m_jibun.end()
-        api_query_part = kw_str[:end_pos].strip()
-        tail_part = kw_str[end_pos:].strip()
-    else:
-        api_query_part = kw_str
-        tail_part = ""
-
-    base_road_addr = api_query_part
-    url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_part)}"
-    headers = {
-        "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
-        "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
-    }
-    try:
-        response = requests.get(url, headers=headers, timeout=5)
-        if response.status_code == 200:
-            res = response.json()
-            addresses = res.get('addresses', [])
-            if addresses:
-                addr_info = addresses[0]
-                road_addr = addr_info.get('roadAddress', '')
-                jibun_addr = addr_info.get('jibunAddress', '')
-                base_road_addr = road_addr if road_addr else jibun_addr
-    except Exception:
-        pass
+    base_road_addr = ""
+    tail_part = ""
+    
+    if has_target_pattern:
+        m_road = re.search(r'([로길]\s*\d+(?:-\d+)?)', kw_str)
+        m_jibun = re.search(r'([가-힣]+동\s*\d+(?:-\d+)?)', kw_str)
         
-    if not base_road_addr:
+        if m_road:
+            end_pos = m_road.end()
+            api_query_part = kw_str[:end_pos].strip()
+            tail_part = kw_str[end_pos:].strip()
+        elif m_jibun:
+            end_pos = m_jibun.end()
+            api_query_part = kw_str[:end_pos].strip()
+            tail_part = kw_str[end_pos:].strip()
+        else:
+            api_query_part = kw_str
+            tail_part = ""
+
         base_road_addr = api_query_part
+        url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_part)}"
+        headers = {
+            "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
+            "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                res = response.json()
+                addresses = res.get('addresses', [])
+                if addresses:
+                    addr_info = addresses[0]
+                    road_addr = addr_info.get('roadAddress', '')
+                    jibun_addr = addr_info.get('jibunAddress', '')
+                    base_road_addr = road_addr if road_addr else jibun_addr
+        except Exception:
+            pass
+            
+        if not base_road_addr:
+            base_road_addr = api_query_part
+    else:
+        # 조건에 맞지 않으면 원본 주소 그대로 보존
+        base_road_addr = kw_str
 
     full_base_text = f"{base_road_addr} {tail_part}"
 
@@ -249,7 +259,6 @@ def ultimate_master_converter(keyword, original_zip=""):
         if match_p1:
             part1 = match_p1.group(1).strip()
             part2 = match_p1.group(2).strip()
-            # 무조건 법정동이 포함되어 있으면 해당 법정동만 남김
             if is_legal_dong(part1):
                 final_paren = f"( {part1} )"
             elif is_legal_dong(part2):
@@ -286,7 +295,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("구주소 우선 검색 및 (법정동, 건물명) 입력 시 무조건 법정동만 남기도록 강화된 최종 마스터 버전입니다.")
+st.write("시·구·동 / 시·구·읍·리 패턴이 명확한 주소만 변환하고 그 외는 원본을 완벽히 보존하는 최종 안전 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -362,6 +371,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_Unconditional.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_StrictSafe.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
