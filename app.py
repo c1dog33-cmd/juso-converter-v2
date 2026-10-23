@@ -30,6 +30,25 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
+# --- [ 중간 중복 지명(시·도) 제거 함수 ] ---
+def remove_stray_province(addr_str):
+    if not addr_str:
+        return addr_str
+    tokens = str(addr_str).split()
+    new_tokens = []
+    seen_prov = False
+    provinces = ['강원특별자치도', '강원도', '서울특별시', '부산광역시', '대구광역시', '인천광역시', '광주광역시', '대전광역시', '울산광역시', '세종특별자치시', '경기도', '충청북도', '충청남도', '전라북도', '전라남도', '경상북도', '경상남도', '제주특별자치도']
+    for tok in tokens:
+        if tok in provinces:
+            if not seen_prov:
+                seen_prov = True
+                new_tokens.append(tok)
+            else:
+                continue
+        else:
+            new_tokens.append(tok)
+    return ' '.join(new_tokens)
+
 # --- [ 주소 전처리 및 괄호 뒤 동·호수 정렬 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
@@ -40,7 +59,7 @@ def pre_process_address(addr_str):
     # 1. [안전 장치] 주소 맨 끝에 이미 동·호수 혹은 호수만 올바르게 자리 잡은 경우 원본 유지
     already_ended_with_dong_ho = bool(re.search(r'([가-힣a-zA-Z0-9]+\s*동\s*\d+(?:동)?\s*\d*호|\d+(?:동\s*)?\d*호)\s*$', s))
     if already_ended_with_dong_ho:
-        return ' '.join(s.split())
+        return remove_stray_province(' '.join(s.split()))
 
     # 2. 괄호 속에 법정동과 건물명이 같이 있는 경우 (예: ( 수서동, 강남 더샵 포레스트 ))
     match_comma = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', s)
@@ -96,7 +115,7 @@ def pre_process_address(addr_str):
     # 9. 빈 괄호 노이즈 제거
     s = re.sub(r'\(\s*\)', '', s)
     
-    return ' '.join(s.split())
+    return remove_stray_province(' '.join(s.split()))
 
 # --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
@@ -196,14 +215,13 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 (신주소 강제 변환 적용) ] ---
+# --- [ 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    # [핵심 보호 필터] 이미 중간에 괄호가 있고 맨 끝에 동·호수/호수가 완벽히 있는 주소는 API 변환 생략 및 원본 보존
     if re.search(r'\([^)]+\)\s+.*(?:동|호)\s*$', kw_str):
         return pre_process_address(kw_str)
     
@@ -223,13 +241,10 @@ def master_juso_converter(keyword, original_zip=""):
             
     if not base_road_addr:
         query_target = api_query_base
-        
-        # 아파트 이름은 유지하되 상세 동 번호와 호수만 제거하여 아파트 주거동 검색 유도
         query_target_for_api = re.sub(r'\s+\d+동\s*\d+호.*$', '', query_target)
         query_target_for_api = re.sub(r'\s+[가-힣a-zA-Z0-9]+\s*동\s*\d+호.*$', '', query_target_for_api)
         query_target_for_api = re.sub(r'\s+\d+호.*$', '', query_target_for_api)
 
-        # 항상 네이버 API를 호출하여 표준 도로명 주소(신주소)로 변환
         url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(query_target_for_api)}"
         headers = {
             "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
@@ -266,6 +281,7 @@ def master_juso_converter(keyword, original_zip=""):
         parts.append(trailing_paren)
 
     final_str = pre_process_address(' '.join(parts))
+    final_str = remove_stray_province(final_str)
     final_str = re.sub(r'\(\s*\)', '', final_str)
     return ' '.join(final_str.split())
 
@@ -273,7 +289,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 신주소(도로명 주소)로 자동 변환 및 정렬 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 신주소 변환 및 중복 지명 자동 정제 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -349,6 +365,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v17.xlsx",
+            file_name="우편배송_최종완벽정리_v18.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
