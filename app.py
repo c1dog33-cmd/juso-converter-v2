@@ -184,24 +184,25 @@ def ultimate_master_converter(keyword, original_zip=""):
         if target_key in kw_str:
             return override_addr
             
-    trailing_paren = ""
-    m_paren = re.search(r'(\([^)]+\))\s*$', kw_str)
-    if m_paren:
-        trailing_paren = m_paren.group(1).strip()
-        kw_str = kw_str[:m_paren.start()].strip()
-        
-    # 기숙사, 생활관, 동/호수 상세 정보 보호 패턴 확장
+    # 1. 상세 호수 / 기숙사 / 메모 보호 (맨 뒤)
     tail_detail = ""
-    m_detail = re.search(r'(\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+[A-Z가-힣]\s*동\s*\d+\s*호.*|\s+\d+동\s*\d+\s*호.*|\s+\d+\s*호.*)\s*$', kw_str)
+    m_detail = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
     if m_detail:
         tail_detail = m_detail.group(1).strip()
         kw_str = kw_str[:m_detail.start()].strip()
+
+    # 2. 괄호 추출 (문자열 중간 또는 끝)
+    trailing_paren = ""
+    m_paren = re.search(r'(\([^)]+\))', kw_str)
+    if m_paren:
+        trailing_paren = m_paren.group(1).strip()
+        kw_str = kw_str[:m_paren.start()] + " " + kw_str[m_paren.end():]
         
-    if not trailing_paren:
-        m_paren2 = re.search(r'(\([^)]+\))\s*$', kw_str)
-        if m_paren2:
-            trailing_paren = m_paren2.group(1).strip()
-            kw_str = kw_str[:m_paren2.start()].strip()
+    if not tail_detail:
+        m_detail2 = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
+        if m_detail2:
+            tail_detail = m_detail2.group(1).strip()
+            kw_str = kw_str[:m_detail2.start()].strip()
 
     brands = [
         '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
@@ -214,7 +215,7 @@ def ultimate_master_converter(keyword, original_zip=""):
     for b in brands:
         idx = kw_str.find(b)
         if idx != -1 and idx < cut_idx:
-            cut_idx = idx
+            cut_idx = idx + len(b)
             
     api_query_part = kw_str[:cut_idx].strip()
     tail_part = kw_str[cut_idx:].strip()
@@ -253,13 +254,18 @@ def ultimate_master_converter(keyword, original_zip=""):
         match_p1 = re.search(r'\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', trailing_paren)
         if match_p1:
             legal_dong = match_p1.group(1).strip()
-            trailing_paren = f"( {legal_dong} )"
+            apt_in_paren = match_p1.group(2).strip()
+            main_text = f"{base_road_addr} {tail_part}"
+            if apt_in_paren in main_text:
+                trailing_paren = f"( {legal_dong} )"
+            else:
+                trailing_paren = f"( {legal_dong}, {apt_in_paren} )"
         else:
             match_p2 = re.search(r'\(\s*([^)]+)\s*\)', trailing_paren)
             if match_p2:
                 inner_text = match_p2.group(1).strip()
                 if '동' not in inner_text:
-                    main_text = f"{base_road_addr} {tail_part} {tail_detail}"
+                    main_text = f"{base_road_addr} {tail_part}"
                     if inner_text in main_text:
                         trailing_paren = ""
 
@@ -281,7 +287,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("기숙사/생활관 보호 및 모든 정돈 규칙이 완벽하게 통합된 최종 마스터 버전입니다.")
+st.write("모든 괄호 규칙과 기숙사/붙여쓴 동 인식 기능이 완벽하게 통합된 마스터 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
