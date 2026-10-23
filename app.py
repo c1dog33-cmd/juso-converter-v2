@@ -177,7 +177,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 통합 마스터 주소 변환 엔진 ] ---
+# --- [ 최종 통합 마스터 주소 변환 엔진 (vFinal Ultimate Master Plus) ] ---
 def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -189,47 +189,21 @@ def ultimate_master_converter(keyword, original_zip=""):
         if target_key in kw_str:
             return override_addr
             
-    # 1. 상세 호수 / 기숙사 / 메모 보호 (맨 뒤)
-    tail_detail = ""
-    m_detail = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
-    if m_detail:
-        tail_detail = m_detail.group(1).strip()
-        kw_str = kw_str[:m_detail.start()].strip()
+    # 도로명 주소 번호 부근에서 깔끔하게 분리하여 건물명/호수 유실 방지
+    m = re.search(r'([로길]\s*\d+(?:-\d+)?)\s+', kw_str)
+    if m:
+        end_pos = m.end()
+        api_query_part = kw_str[:end_pos].strip()
+        tail_part = kw_str[end_pos:].strip()
+    else:
+        api_query_part = kw_str
+        tail_part = ""
 
-    # 2. 괄호 추출 (문자열 중간 또는 끝에 있는 모든 괄호 처리)
-    parens = re.findall(r'\([^)]+\)', kw_str)
+    # 괄호 추출 및 분리
+    parens = re.findall(r'\([^)]+\)', tail_part)
     for p in parens:
-        kw_str = kw_str.replace(p, "").strip()
+        tail_part = tail_part.replace(p, "").strip()
     paren_str = parens[-1] if parens else ""
-
-    if not tail_detail:
-        m_detail2 = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
-        if m_detail2:
-            tail_detail = m_detail2.group(1).strip()
-            kw_str = kw_str[:m_detail2.start()].strip()
-
-    brands = [
-        '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
-        '자이', '푸르지오', '힐스테이트', '래미안', '아이파크', '캐슬', 'e편한세상', '편한세상',
-        '더샵', '데시앙', '뷰', '써밋', '리슈빌', '하늘채', '포레나', '우미린', '트루엘', '코아루', '휴먼시아',
-        '팰리스', '하이츠', '주택', '원룸', '기숙사', '생활관', '사택', '@'
-    ]
-    
-    cut_idx = len(kw_str)
-    for b in brands:
-        idx = kw_str.find(b)
-        if idx != -1 and idx < cut_idx:
-            cut_idx = idx + len(b)
-            
-    api_query_part = kw_str[:cut_idx].strip()
-    tail_part = kw_str[cut_idx:].strip()
-    
-    if not api_query_part or len(api_query_part) < 5:
-        q = re.sub(r'\s+\d+동\s*\d+호.*$', '', kw_str)
-        q = re.sub(r'\s+[가-힣a-zA-Z0-9]+\s*동\s*\d+호.*$', '', q)
-        q = re.sub(r'\s+\d+호.*$', '', q)
-        api_query_part = q
-        tail_part = kw_str[len(q):].strip()
 
     base_road_addr = api_query_part
     url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_part)}"
@@ -255,7 +229,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 
     full_base_text = f"{base_road_addr} {tail_part}"
 
-    # --- [ 엄격한 괄호 정돈 규칙 1 & 규칙 2 적용 ] ---
+    # --- [ 엄격한 괄호 정돈 규칙 1 & 규칙 2 단순화·강화 적용 ] ---
     final_paren = ""
     if paren_str:
         match_p1 = re.search(r'\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', paren_str)
@@ -263,12 +237,12 @@ def ultimate_master_converter(keyword, original_zip=""):
             part1 = match_p1.group(1).strip()
             part2 = match_p1.group(2).strip()
             if is_legal_dong(part1):
-                if part2 in full_base_text or any(b in part2 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔']):
+                if part2 in full_base_text or any(b in part2 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트']):
                     final_paren = f"( {part1} )"
                 else:
                     final_paren = f"( {part1}, {part2} )"
             elif is_legal_dong(part2):
-                if part1 in full_base_text or any(b in part1 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔']):
+                if part1 in full_base_text or any(b in part1 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트']):
                     final_paren = f"( {part2} )"
                 else:
                     final_paren = f"( {part2}, {part1} )"
@@ -281,8 +255,8 @@ def ultimate_master_converter(keyword, original_zip=""):
                 if is_legal_dong(inner_text):
                     final_paren = paren_str
                 else:
-                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔']):
-                        final_paren = ""  # 중복 건물명 완전 삭제
+                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제']):
+                        final_paren = ""  # 중복 건물명 통째로 삭제
                     else:
                         final_paren = paren_str
 
@@ -291,8 +265,6 @@ def ultimate_master_converter(keyword, original_zip=""):
         parts.append(tail_part)
     if final_paren:
         parts.append(final_paren)
-    if tail_detail:
-        parts.append(tail_detail)
 
     final_str = ' '.join(parts)
     final_str = remove_duplicate_words(final_str)
@@ -304,7 +276,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("모든 괄호 규칙(규칙 1, 2)과 기숙사/붙여쓴 동/중간 위치 괄호 예외가 완벽하게 해결된 최종 완성 버전입니다.")
+st.write("금강팰리스 등 건물명 유실 방지 및 모든 괄호 규칙이 완벽하게 강화된 마스터 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -380,6 +352,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_UltimateMaster.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_UltimateMasterPlus.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
