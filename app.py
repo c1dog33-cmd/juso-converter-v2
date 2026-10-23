@@ -156,7 +156,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 통합 마스터 주소 변환 엔진 ] ---
+# --- [ 최종 완벽 통합 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -174,6 +174,13 @@ def master_juso_converter(keyword, original_zip=""):
         trailing_paren = m_paren.group(1).strip()
         kw_str = kw_str[:m_paren.start()].strip()
         
+    # 상세 호수나 상호 정보(예: 207호, 311호, 지하1호 등) 맨 뒤 보호 분리
+    tail_detail = ""
+    m_detail = re.search(r'(\s+\d+호|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
+    if m_detail:
+        tail_detail = m_detail.group(1).strip()
+        kw_str = kw_str[:m_detail.start()].strip()
+
     brands = [
         '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
         '자이', '푸르지오', '힐스테이트', '래미안', '아이파크', '캐슬', 'e편한세상', '편한세상',
@@ -196,7 +203,6 @@ def master_juso_converter(keyword, original_zip=""):
         api_query_part = q
         tail_part = kw_str[len(q):].strip()
 
-    # 중간 불필요한 구 주소 지번 제거 (예: 명륜동 857 등)
     tail_part = re.sub(r'\s+[가-힣]+동\s+\d+(?:-\d+)?(?=\s+\d+동)', '', tail_part)
 
     for b in brands:
@@ -236,6 +242,8 @@ def master_juso_converter(keyword, original_zip=""):
     parts = [base_road_addr]
     if tail_part:
         parts.append(tail_part)
+    if tail_detail and tail_detail not in tail_part:
+        parts.append(tail_detail)
     if trailing_paren:
         parts.append(trailing_paren)
 
@@ -248,7 +256,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("요청하신 모든 규칙(정밀 신주소 변환, 브랜드 하이픈 동·호수 정렬, 중복 괄호 정돈)이 적용된 최종 변환기입니다.")
+st.write("상세 호수 및 상호 보호 규칙이 완벽히 적용된 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -324,6 +332,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v23.xlsx",
+            file_name="우편배송_최종완벽정리_v24.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
