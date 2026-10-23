@@ -30,13 +30,6 @@ def remove_illegal_chars(val):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 신주소(도로명 주소) 판별 함수 ] ---
-def is_new_road_address(addr_str):
-    if not addr_str:
-        return False
-    road_pattern = r'[로길]\s*\d+(?:번길)?\s+\d+'
-    return bool(re.search(road_pattern, addr_str))
-
 # --- [ 주소 전처리 및 괄호 뒤 동·호수 정렬 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
@@ -203,7 +196,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 ] ---
+# --- [ 마스터 주소 변환 엔진 (신주소 강제 변환 적용) ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -231,31 +224,29 @@ def master_juso_converter(keyword, original_zip=""):
     if not base_road_addr:
         query_target = api_query_base
         
-        # [개선 포인트] 아파트 이름은 유지하되 상세 동 번호와 호수만 제거하여 아파트 주거동 검색 유도
+        # 아파트 이름은 유지하되 상세 동 번호와 호수만 제거하여 아파트 주거동 검색 유도
         query_target_for_api = re.sub(r'\s+\d+동\s*\d+호.*$', '', query_target)
         query_target_for_api = re.sub(r'\s+[가-힣a-zA-Z0-9]+\s*동\s*\d+호.*$', '', query_target_for_api)
         query_target_for_api = re.sub(r'\s+\d+호.*$', '', query_target_for_api)
 
-        if is_new_road_address(query_target_for_api):
-            base_road_addr = query_target_for_api
-        else:
-            url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(query_target_for_api)}"
-            headers = {
-                "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
-                "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
-            }
-            try:
-                response = requests.get(url, headers=headers, timeout=5)
-                if response.status_code == 200:
-                    res = response.json()
-                    addresses = res.get('addresses', [])
-                    if addresses:
-                        addr_info = addresses[0]
-                        road_addr = addr_info.get('roadAddress', '')
-                        jibun_addr = addr_info.get('jibunAddress', '')
-                        base_road_addr = road_addr if road_addr else jibun_addr
-            except Exception:
-                pass
+        # 항상 네이버 API를 호출하여 표준 도로명 주소(신주소)로 변환
+        url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(query_target_for_api)}"
+        headers = {
+            "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
+            "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
+        }
+        try:
+            response = requests.get(url, headers=headers, timeout=5)
+            if response.status_code == 200:
+                res = response.json()
+                addresses = res.get('addresses', [])
+                if addresses:
+                    addr_info = addresses[0]
+                    road_addr = addr_info.get('roadAddress', '')
+                    jibun_addr = addr_info.get('jibunAddress', '')
+                    base_road_addr = road_addr if road_addr else jibun_addr
+        except Exception:
+            pass
                 
     if not base_road_addr:
         base_road_addr = api_query_base
@@ -282,7 +273,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 아파트 주거동 정밀 매핑 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 신주소(도로명 주소)로 자동 변환 및 정렬 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -358,6 +349,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v16.xlsx",
+            file_name="우편배송_최종완벽정리_v17.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
