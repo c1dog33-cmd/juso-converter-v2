@@ -244,7 +244,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 
     full_base_text = f"{base_road_addr} {tail_part}"
 
-    # 3. 괄호 정돈 규칙 (아파트/건물명 괄호는 오산시 주소처럼 본문에 없을 경우 삭제하지 않고 안전하게 보존)
+    # 3. 괄호 정돈 규칙 (아파트/건물명 괄호 보존)
     final_paren = ""
     if paren_str:
         match_p1 = re.search(r'\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', paren_str)
@@ -264,12 +264,10 @@ def ultimate_master_converter(keyword, original_zip=""):
                 if is_legal_dong(inner_text):
                     final_paren = paren_str
                 else:
-                    # 오직 본문(full_base_text)에 해당 건물명이 실제로 포함되어 있는 경우에만 중복으로 간주해 삭제하고, 
-                    # 포함되지 않은 경우(예: (원동두산.동아아파트))는 원본 그대로 보존함!
                     if inner_text in full_base_text:
                         final_paren = ""
                     else:
-                        final_paren = paren_str  # 아파트 이름 괄호 보존!
+                        final_paren = paren_str
 
     parts = [base_road_addr]
     if tail_part and tail_part not in base_road_addr:
@@ -289,7 +287,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("구주소 신주소 변환 및 아파트 이름 괄호 보존 기능이 완벽하게 적용된 최종 마스터 버전입니다.")
+st.write("구주소/신주소 완벽 분리 및 아파트 이름 보존 기능이 적용된 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -326,7 +324,7 @@ if uploaded_file is not None:
                     
                 df['배송지'] = converted_addrs
             else:
-5                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
+                st.warning("[주의] '배송지' 컬럼을 찾을 수 없습니다.")
 
             for col in df.columns:
                 df[col] = df[col].apply(remove_illegal_chars)
@@ -365,6 +363,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_AptProtected.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_Clean.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
