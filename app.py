@@ -49,12 +49,15 @@ def remove_stray_province(addr_str):
             new_tokens.append(tok)
     return ' '.join(new_tokens)
 
-# --- [ 주소 전처리 및 브랜드 아파트 하이픈 동·호수 정렬 함수 ] ---
+# --- [ 주소 전처리 및 불필요한 구 주소 지번 제거 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
     s = str(addr_str).strip()
+
+    # 0. [신규 규칙] 아파트 단지 뒤에 딸려 나오는 불필요한 구 주소 지번(예: 명륜동 857) 삭제
+    s = re.sub(r'\s+[가-힣]+동\s+\d+(?:-\d+)?(?=\s+\d+동)', '', s)
 
     # 1. 아파트 브랜드명 뒤의 하이픈 동·호수 변환 (예: e편한세상 대전법동 102-2802 -> e편한세상 102동 2802호)
     brands = [
@@ -287,7 +290,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 신주소 변환 및 브랜드 아파트 상세 동·호수 정리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 신주소 변환 및 불필요한 구 주소 지번 자동 삭제 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -363,6 +366,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v20.xlsx",
+            file_name="우편배송_최종완벽정리_v21.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
