@@ -47,12 +47,10 @@ def remove_stray_province(addr_str):
             new_tokens.append(tok)
     return ' '.join(new_tokens)
 
-# --- [ 법정동 판별 함수 ] ---
 def is_legal_dong(text):
     t = text.strip()
     return bool(re.search(r'[가-힣]+(동|읍|면|리)$', t)) and len(t) <= 6
 
-# --- [ 건물명과 붙어있는 동(C동, 가동 등) 자동 띄어쓰기 교정 ] ---
 def preprocess_attached_dong(addr_str):
     if not addr_str:
         return addr_str
@@ -62,7 +60,6 @@ def preprocess_attached_dong(addr_str):
     s = re.sub(r'([가-힣]+아파트)([A-Z가-힣\d]동)', r'\1 \2', s)
     return s
 
-# --- [ 연속 중복 건물명 자동 제거 함수 ] ---
 def remove_duplicate_words(addr_str):
     if not addr_str:
         return addr_str
@@ -85,7 +82,6 @@ def remove_duplicate_words(addr_str):
             i += 1
     return ' '.join(cleaned_words)
 
-# --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
         return val
@@ -177,7 +173,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 통합 마스터 주소 변환 엔진 (vFinal Ultimate Master Plus) ] ---
+# --- [ 최종 통합 마스터 주소 변환 엔진 (구주소 우선 검색 + 후처리 파이프라인) ] ---
 def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -189,22 +185,41 @@ def ultimate_master_converter(keyword, original_zip=""):
         if target_key in kw_str:
             return override_addr
             
-    # 도로명 주소 번호 부근에서 깔끔하게 분리하여 건물명/호수 유실 방지
-    m = re.search(r'([로길]\s*\d+(?:-\d+)?)\s+', kw_str)
-    if m:
-        end_pos = m.end()
+    # 1. 상세 동·호수 및 괄호 미리 안전 분리
+    tail_detail = ""
+    m_detail = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
+    if m_detail:
+        tail_detail = m_detail.group(1).strip()
+        kw_str = kw_str[:m_detail.start()].strip()
+
+    parens = re.findall(r'\([^)]+\)', kw_str)
+    for p in parens:
+        kw_str = kw_str.replace(p, "").strip()
+    paren_str = parens[-1] if parens else ""
+
+    if not tail_detail:
+        m_detail2 = re.search(r'(\s+\d+동\s*\d+호.*|\s+[A-Z가-힣]\s*동\s*\d+호.*|\s+[가-힣]+\s*기숙사.*|\s+[가-힣]+\s*생활관.*|\s+\d+\s*호.*|\s*\(종\d+\))\s*$', kw_str)
+        if m_detail2:
+            tail_detail = m_detail2.group(1).strip()
+            kw_str = kw_str[:m_detail2.start()].strip()
+
+    # 2. 구주소(지번) 또는 도로명 주소 패턴을 최우선으로 인식하여 API 검색용 쿼리 추출
+    m_road = re.search(r'([로길]\s*\d+(?:-\d+)?)', kw_str)
+    m_jibun = re.search(r'([가-힣]+동\s*\d+(?:-\d+)?)', kw_str)
+    
+    if m_road:
+        end_pos = m_road.end()
+        api_query_part = kw_str[:end_pos].strip()
+        tail_part = kw_str[end_pos:].strip()
+    elif m_jibun:
+        end_pos = m_jibun.end()
         api_query_part = kw_str[:end_pos].strip()
         tail_part = kw_str[end_pos:].strip()
     else:
         api_query_part = kw_str
         tail_part = ""
 
-    # 괄호 추출 및 분리
-    parens = re.findall(r'\([^)]+\)', tail_part)
-    for p in parens:
-        tail_part = tail_part.replace(p, "").strip()
-    paren_str = parens[-1] if parens else ""
-
+    # 3. 네이버 지오코딩 API 호출 (구주소/도로명 우선 검색)
     base_road_addr = api_query_part
     url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_part)}"
     headers = {
@@ -229,7 +244,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 
     full_base_text = f"{base_road_addr} {tail_part}"
 
-    # --- [ 엄격한 괄호 정돈 규칙 1 & 규칙 2 단순화·강화 적용 ] ---
+    # 4. 괄호 정돈 규칙 1 & 규칙 2 후처리 적용
     final_paren = ""
     if paren_str:
         match_p1 = re.search(r'\(\s*([^,]+)\s*,\s*([^)]+)\s*\)', paren_str)
@@ -237,12 +252,12 @@ def ultimate_master_converter(keyword, original_zip=""):
             part1 = match_p1.group(1).strip()
             part2 = match_p1.group(2).strip()
             if is_legal_dong(part1):
-                if part2 in full_base_text or any(b in part2 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트']):
+                if part2 in full_base_text or any(b in part2 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트', '라비앙로제', '스윗닷홈']):
                     final_paren = f"( {part1} )"
                 else:
                     final_paren = f"( {part1}, {part2} )"
             elif is_legal_dong(part2):
-                if part1 in full_base_text or any(b in part1 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트']):
+                if part1 in full_base_text or any(b in part1 for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '명가타운', '대동아파트', '라비앙로제', '스윗닷홈']):
                     final_paren = f"( {part2} )"
                 else:
                     final_paren = f"( {part2}, {part1} )"
@@ -255,8 +270,8 @@ def ultimate_master_converter(keyword, original_zip=""):
                 if is_legal_dong(inner_text):
                     final_paren = paren_str
                 else:
-                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제']):
-                        final_paren = ""  # 중복 건물명 통째로 삭제
+                    if inner_text in full_base_text or any(b in inner_text for b in ['아파트', '타운', '팰리스', '하이츠', '빌라', '오피스텔', '대동아파트', '명가타운', '라비앙로제', '스윗닷홈']):
+                        final_paren = ""
                     else:
                         final_paren = paren_str
 
@@ -265,6 +280,8 @@ def ultimate_master_converter(keyword, original_zip=""):
         parts.append(tail_part)
     if final_paren:
         parts.append(final_paren)
+    if tail_detail:
+        parts.append(tail_detail)
 
     final_str = ' '.join(parts)
     final_str = remove_duplicate_words(final_str)
@@ -276,7 +293,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("금강팰리스 등 건물명 유실 방지 및 모든 괄호 규칙이 완벽하게 강화된 마스터 최종 버전입니다.")
+st.write("구주소 우선 검색 파이프라인 및 모든 괄호 규칙이 완벽하게 적용된 최종 마스터 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -352,6 +369,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_UltimateMasterPlus.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_PipelineMaster.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
