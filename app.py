@@ -58,6 +58,29 @@ def clean_parentheses(addr_str):
         s = s.replace(match.group(0), f"( {legal_dong} )")
     return ' '.join(s.split())
 
+# --- [ 연속 중복 건물명 자동 제거 함수 ] ---
+def remove_duplicate_words(addr_str):
+    if not addr_str:
+        return addr_str
+    s = str(addr_str).strip()
+    words = s.split()
+    cleaned_words = []
+    i = 0
+    while i < len(words):
+        cleaned_words.append(words[i])
+        matched_dup = False
+        for length in range(4, 0, -1):
+            if i + length * 2 <= len(words):
+                seq1 = words[i:i+length]
+                seq2 = words[i+length:i+length*2]
+                if seq1 == seq2:
+                    i += length
+                    matched_dup = True
+                    break
+        if not matched_dup:
+            i += 1
+    return ' '.join(cleaned_words)
+
 # --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
@@ -174,7 +197,6 @@ def master_juso_converter(keyword, original_zip=""):
         trailing_paren = m_paren.group(1).strip()
         kw_str = kw_str[:m_paren.start()].strip()
         
-    # 상세 호수나 상호 정보(예: 207호, 311호, 지하1호 등) 맨 뒤 보호 분리
     tail_detail = ""
     m_detail = re.search(r'(\s+\d+호|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
     if m_detail:
@@ -248,6 +270,7 @@ def master_juso_converter(keyword, original_zip=""):
         parts.append(trailing_paren)
 
     final_str = ' '.join(parts)
+    final_str = remove_duplicate_words(final_str)
     final_str = remove_stray_province(final_str)
     final_str = re.sub(r'\(\s*\)', '', final_str)
     return ' '.join(final_str.split())
@@ -256,7 +279,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("상세 호수 및 상호 보호 규칙이 완벽히 적용된 최종 버전입니다.")
+st.write("중복 건물명 자동 제거 및 상세 호수 보호 기능이 적용된 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -332,6 +355,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v24.xlsx",
+            file_name="우편배송_최종완벽정리_v25.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
