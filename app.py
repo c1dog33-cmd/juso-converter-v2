@@ -17,20 +17,18 @@ def fix_zipcode(val):
     val_str = str(val).split('.')[0].strip()
     return val_str.zfill(5) if val_str else ""
 
-# --- [ 특정 예외 주소 및 상가/아파트 분리 강제 매핑 사전 ] ---
+# --- [ 특정 예외 주소 매핑 사전 ] ---
 SPECIAL_EXCEPTIONS = {
     "불로동 268-2": "인천광역시 검단구 금정로 12 (불로동, 신검단중앙역풍경채어바니티)",
     "남산타운": "서울특별시 중구 다산로 32 (신당동, 남산타운)",
     "율곡동 415": "경상북도 김천시 혁신8로 66",
 }
 
-# --- [ openpyxl 제어 문자 에러 방지 함수 ] ---
 def remove_illegal_chars(val):
     if isinstance(val, str):
         return re.sub(r'[\x00-\x08\x0b\x0c\x0e-\x1f\x7f-\x9f]', '', val)
     return val
 
-# --- [ 중간 중복 지명(시·도) 제거 함수 ] ---
 def remove_stray_province(addr_str):
     if not addr_str:
         return addr_str
@@ -48,75 +46,6 @@ def remove_stray_province(addr_str):
         else:
             new_tokens.append(tok)
     return ' '.join(new_tokens)
-
-# --- [ 주소 전처리 및 불필요한 구 주소 지번 제거 함수 ] ---
-def pre_process_address(addr_str):
-    if not addr_str:
-        return addr_str
-        
-    s = str(addr_str).strip()
-
-    # 0. [신규 규칙] 아파트 단지 뒤에 딸려 나오는 불필요한 구 주소 지번(예: 명륜동 857) 삭제
-    s = re.sub(r'\s+[가-힣]+동\s+\d+(?:-\d+)?(?=\s+\d+동)', '', s)
-
-    # 1. 아파트 브랜드명 뒤의 하이픈 동·호수 변환 (예: e편한세상 대전법동 102-2802 -> e편한세상 102동 2802호)
-    brands = [
-        '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
-        '자이', '푸르지오', '힐스테이트', '래미안', '아이파크', '캐슬', 'e편한세상', '편한세상',
-        '더샵', '데시앙', '뷰', '써밋', '리슈빌', '하늘채', '포레나', '우미린', '트루엘', '코아루', '휴먼시아'
-    ]
-    for brand in brands:
-        if brand in s:
-            match = re.search(rf'{brand}\s+(?:[가-힣]+동\s+)?(\d{{1,4}})-(\d{{1,4}})', s)
-            if match:
-                d_num = match.group(1)
-                h_num = match.group(2)
-                sub_pattern = rf'{brand}\s+(?:[가-힣]+동\s+)?{d_num}-{h_num}'
-                s = re.sub(sub_pattern, rf'{brand} {d_num}동 {h_num}호', s)
-
-    s = re.sub(r'([가-힣A-Za-z0-9]+아파트)\s+(\d{1,4})-(\d{1,4})', r'\1 \2동 \3호', s)
-
-    # 2. 이미 동·호수가 올바르게 자리 잡은 경우 반환
-    already_ended_with_dong_ho = bool(re.search(r'([가-힣a-zA-Z0-9]+\s*동\s*\d+(?:동)?\s*\d*호|\d+(?:동\s*)?\d*호)\s*$', s))
-    if already_ended_with_dong_ho:
-        return remove_stray_province(' '.join(s.split()))
-
-    # 3. 괄호 속에 법정동과 건물명이 같이 있는 경우 정렬
-    match_comma = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', s)
-    if match_comma:
-        base_addr = match_comma.group(1).strip()
-        dong_ho = match_comma.group(2).strip()
-        legal_dong = match_comma.group(3).strip()
-        bldg_name = match_comma.group(4).strip()
-        if bldg_name not in base_addr:
-            s = f"{base_addr} {bldg_name} {dong_ho} ( {legal_dong} )"
-        else:
-            s = f"{base_addr} {dong_ho} ( {legal_dong} )"
-    else:
-        match_building = re.search(r'(.+?)\s+([가-힣a-zA-Z0-9]+\s*동\s*\d+(?:동)?\s*\d*호)\s+(\([^)]+\))$', s)
-        if match_building:
-            base_addr = match_building.group(1).strip()
-            building_dong_ho = match_building.group(2).strip()
-            paren_part = match_building.group(3).strip()
-            s = f"{base_addr} {paren_part} {building_dong_ho}"
-        else:
-            match_num = re.search(r'(.+?)\s+(\d+(?:동\s*)?\d*호)\s+(\([^)]+\))$', s)
-            if match_num:
-                base_addr = match_num.group(1).strip()
-                dong_ho = match_num.group(2).strip()
-                paren_part = match_num.group(3).strip()
-                s = f"{base_addr} {paren_part} {dong_ho}"
-
-    # 4. 슬래시 형태 및 기타 포맷 보정
-    s = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', s)
-    s = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', r'\1 \2동 \3호', s)
-    s = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', s)
-    s = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', s)
-    s = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', s)
-    s = re.sub(r'([가-힣A-Za-z]+)(\d+호)', r'\1 \2', s)
-    s = re.sub(r'\(\s*\)', '', s)
-    
-    return remove_stray_province(' '.join(s.split()))
 
 # --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
@@ -216,72 +145,86 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 마스터 주소 변환 엔진 ] ---
+# --- [ 정밀 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
     
-    if re.search(r'\([^)]+\)\s+.*(?:동|호)\s*$', kw_str):
-        return pre_process_address(kw_str)
-    
-    api_query_base = kw_str
+    for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
+        if target_key in kw_str:
+            return override_addr
+            
     trailing_paren = ""
-    
     m_paren = re.search(r'(\([^)]+\))\s*$', kw_str)
     if m_paren:
         trailing_paren = m_paren.group(1).strip()
-        api_query_base = api_query_base[:m_paren.start()].strip()
-
-    base_road_addr = ""
-    for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
-        if target_key in kw_str:
-            base_road_addr = override_addr
-            break
-            
-    if not base_road_addr:
-        query_target = api_query_base
-        query_target_for_api = re.sub(r'\s+\d+동\s*\d+호.*$', '', query_target)
-        query_target_for_api = re.sub(r'\s+[가-힣a-zA-Z0-9]+\s*동\s*\d+호.*$', '', query_target_for_api)
-        query_target_for_api = re.sub(r'\s+\d+호.*$', '', query_target_for_api)
-
-        url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(query_target_for_api)}"
-        headers = {
-            "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
-            "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
-        }
-        try:
-            response = requests.get(url, headers=headers, timeout=5)
-            if response.status_code == 200:
-                res = response.json()
-                addresses = res.get('addresses', [])
-                if addresses:
-                    addr_info = addresses[0]
-                    road_addr = addr_info.get('roadAddress', '')
-                    jibun_addr = addr_info.get('jibunAddress', '')
-                    base_road_addr = road_addr if road_addr else jibun_addr
-        except Exception:
-            pass
-                
-    if not base_road_addr:
-        base_road_addr = api_query_base
-
-    tail_part = kw_str
-    for part in base_road_addr.split():
-        if part in tail_part:
-            tail_part = tail_part.replace(part, "", 1)
-            
-    tail_part = re.sub(r'\s+[가-힣]+동\s+\d+호.*$', '', tail_part)
-    tail_part = ' '.join(tail_part.split())
+        kw_str = kw_str[:m_paren.start()].strip()
+        
+    brands = [
+        '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
+        '자이', '푸르지오', '힐스테이트', '래미안', '아이파크', '캐슬', 'e편한세상', '편한세상',
+        '더샵', '데시앙', '뷰', '써밋', '리슈빌', '하늘채', '포레나', '우미린', '트루엘', '코아루', '휴먼시아'
+    ]
     
+    cut_idx = len(kw_str)
+    for b in brands:
+        idx = kw_str.find(b)
+        if idx != -1 and idx < cut_idx:
+            cut_idx = idx
+            
+    api_query_part = kw_str[:cut_idx].strip()
+    tail_part = kw_str[cut_idx:].strip()
+    
+    if not api_query_part or len(api_query_part) < 5:
+        q = re.sub(r'\s+\d+동\s*\d+호.*$', '', kw_str)
+        q = re.sub(r'\s+[가-힣a-zA-Z0-9]+\s*동\s*\d+호.*$', '', q)
+        q = re.sub(r'\s+\d+호.*$', '', q)
+        api_query_part = q
+        tail_part = kw_str[len(q):].strip()
+
+    for b in brands:
+        if b in tail_part:
+            match = re.search(rf'{b}\s+(?:[가-힣]+동\s+)?(\d{{1,4}})-(\d{{1,4}})', tail_part)
+            if match:
+                d_num = match.group(1)
+                h_num = match.group(2)
+                sub_pattern = rf'{b}\s+(?:[가-힣]+동\s+)?{d_num}-{h_num}'
+                tail_part = re.sub(sub_pattern, rf'{b} {d_num}동 {h_num}호', tail_part)
+                
+    tail_part = re.sub(r'([가-힣A-Za-z0-9]+아파트)\s+(\d{1,4})-(\d{1,4})', r'\1 \2동 \3호', tail_part)
+    tail_part = re.sub(r'\b(\d{1,4})-(\d{1,4})\s*호?\b', r'\1동 \2호', tail_part)
+
+    base_road_addr = api_query_part
+    url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(api_query_part)}"
+    headers = {
+        "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
+        "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
+    }
+    try:
+        response = requests.get(url, headers=headers, timeout=5)
+        if response.status_code == 200:
+            res = response.json()
+            addresses = res.get('addresses', [])
+            if addresses:
+                addr_info = addresses[0]
+                road_addr = addr_info.get('roadAddress', '')
+                jibun_addr = addr_info.get('jibunAddress', '')
+                base_road_addr = road_addr if road_addr else jibun_addr
+    except Exception:
+        pass
+        
+    if not base_road_addr:
+        base_road_addr = api_query_part
+
     parts = [base_road_addr]
-    if tail_part and tail_part not in base_road_addr:
+    if tail_part:
         parts.append(tail_part)
-    elif trailing_paren and trailing_paren not in base_road_addr:
+    if trailing_paren:
         parts.append(trailing_paren)
 
-    final_str = pre_process_address(' '.join(parts))
+    final_str = ' '.join(parts)
     final_str = remove_stray_province(final_str)
     final_str = re.sub(r'\(\s*\)', '', final_str)
     return ' '.join(final_str.split())
@@ -290,7 +233,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 신주소 변환 및 불필요한 구 주소 지번 자동 삭제 처리가 이루어집니다.")
+st.write("아파트 브랜드명 앞 지번 영역만 분리하여 신주소로 정밀 변환 및 동·호수 정리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -366,6 +309,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v21.xlsx",
+            file_name="우편배송_최종완벽정리_v22.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
