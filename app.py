@@ -49,19 +49,36 @@ def remove_stray_province(addr_str):
             new_tokens.append(tok)
     return ' '.join(new_tokens)
 
-# --- [ 주소 전처리 및 괄호 뒤 동·호수 정렬 함수 ] ---
+# --- [ 주소 전처리 및 브랜드 아파트 하이픈 동·호수 정렬 함수 ] ---
 def pre_process_address(addr_str):
     if not addr_str:
         return addr_str
         
     s = str(addr_str).strip()
 
-    # 1. [안전 장치] 주소 맨 끝에 이미 동·호수 혹은 호수만 올바르게 자리 잡은 경우 원본 유지
+    # 1. 아파트 브랜드명 뒤의 하이픈 동·호수 변환 (예: e편한세상 대전법동 102-2802 -> e편한세상 102동 2802호)
+    brands = [
+        '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
+        '자이', '푸르지오', '힐스테이트', '래미안', '아이파크', '캐슬', 'e편한세상', '편한세상',
+        '더샵', '데시앙', '뷰', '써밋', '리슈빌', '하늘채', '포레나', '우미린', '트루엘', '코아루', '휴먼시아'
+    ]
+    for brand in brands:
+        if brand in s:
+            match = re.search(rf'{brand}\s+(?:[가-힣]+동\s+)?(\d{{1,4}})-(\d{{1,4}})', s)
+            if match:
+                d_num = match.group(1)
+                h_num = match.group(2)
+                sub_pattern = rf'{brand}\s+(?:[가-힣]+동\s+)?{d_num}-{h_num}'
+                s = re.sub(sub_pattern, rf'{brand} {d_num}동 {h_num}호', s)
+
+    s = re.sub(r'([가-힣A-Za-z0-9]+아파트)\s+(\d{1,4})-(\d{1,4})', r'\1 \2동 \3호', s)
+
+    # 2. 이미 동·호수가 올바르게 자리 잡은 경우 반환
     already_ended_with_dong_ho = bool(re.search(r'([가-힣a-zA-Z0-9]+\s*동\s*\d+(?:동)?\s*\d*호|\d+(?:동\s*)?\d*호)\s*$', s))
     if already_ended_with_dong_ho:
         return remove_stray_province(' '.join(s.split()))
 
-    # 2. 괄호 속에 법정동과 건물명이 같이 있는 경우 (예: ( 수서동, 강남 더샵 포레스트 ))
+    # 3. 괄호 속에 법정동과 건물명이 같이 있는 경우 정렬
     match_comma = re.search(r'(.+?)\s+(\d+동\s+\d+호)\s+\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', s)
     if match_comma:
         base_addr = match_comma.group(1).strip()
@@ -73,7 +90,6 @@ def pre_process_address(addr_str):
         else:
             s = f"{base_addr} {dong_ho} ( {legal_dong} )"
     else:
-        # 3. 괄호가 맨 뒤에 있을 때 그 앞의 동·호수 (가동, 나동, a동 등)를 괄호 뒤로 이동
         match_building = re.search(r'(.+?)\s+([가-힣a-zA-Z0-9]+\s*동\s*\d+(?:동)?\s*\d*호)\s+(\([^)]+\))$', s)
         if match_building:
             base_addr = match_building.group(1).strip()
@@ -88,32 +104,13 @@ def pre_process_address(addr_str):
                 paren_part = match_num.group(3).strip()
                 s = f"{base_addr} {paren_part} {dong_ho}"
 
-    # 4. 샘머리아파트 등 중복 이중 표기 제거
-    s = re.sub(r'(샘머리아파트\d*단지)\s+(샘머리아파트)', r'\1', s)
-    s = re.sub(r'(샘머리아파트)\s+(샘머리아파트\d*단지)', r'\2', s)
-
-    # 5. 슬래시 형태(105/2202)를 105동 2202호로 변환
+    # 4. 슬래시 형태 및 기타 포맷 보정
     s = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', s)
-    
-    # 6. 아파트/빌라명 및 주요 브랜드 뒤의 하이픈 동·호수 변환 (e편한세상 등 확장 적용)
-    def replace_bldg_hyphen(match):
-        prefix = match.group(1)
-        d = match.group(2)
-        h = match.group(3)
-        return f"{prefix} {d}동 {h}호"
-    
-    brands_pattern = r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운|자이|푸르지오|힐스테이트|래미안|아이파크|캐슬|e편한세상|편한세상|더샵|데시앙|뷰|써밋|리슈빌|하늘채|포레나|우미린|트루엘|코아루|휴먼시아)'
-    s = re.sub(rf'{brands_pattern}\s+(\d{{1,4}})-(\d{{1,4}})호?', replace_bldg_hyphen, s)
+    s = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', r'\1 \2동 \3호', s)
     s = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', s)
-
-    # 7. 한글 및 영문 보조 동 포맷팅 (가동, a동 등)
     s = re.sub(r'\b(\d+\s*동|[가-하A-Za-z]\s*동)\s*(\d+)(?!호)\b', r'\1 \2호', s)
     s = re.sub(r'\b([가-하A-Za-z]동)(\d+호)\b', r'\1 \2', s)
-    
-    # 8. 건물명 뒤에 붙어 있는 상세 호수 띄어쓰기 보정
     s = re.sub(r'([가-힣A-Za-z]+)(\d+호)', r'\1 \2', s)
-    
-    # 9. 빈 괄호 노이즈 제거
     s = re.sub(r'\(\s*\)', '', s)
     
     return remove_stray_province(' '.join(s.split()))
@@ -272,7 +269,6 @@ def master_juso_converter(keyword, original_zip=""):
         if part in tail_part:
             tail_part = tail_part.replace(part, "", 1)
             
-    # 안전하게 번지수나 불필요한 법정동 잔여물 제거 (상세 동·호수 숫자는 보호)
     tail_part = re.sub(r'\s+[가-힣]+동\s+\d+호.*$', '', tail_part)
     tail_part = ' '.join(tail_part.split())
     
@@ -291,7 +287,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 브랜드 아파트 및 상세 동·호수까지 완벽하게 정돈됩니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 신주소 변환 및 브랜드 아파트 상세 동·호수 정리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -367,6 +363,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v19.xlsx",
+            file_name="우편배송_최종완벽정리_v20.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
