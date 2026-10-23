@@ -230,13 +230,16 @@ def master_juso_converter(keyword, original_zip=""):
             
     if not base_road_addr:
         query_target = api_query_base
-        clean_for_api = re.sub(r'\s+\d+호.*$', '', query_target)
-        clean_for_api = re.sub(r'\s+(?:지층|지하\d+층|\d+층).*$', '', clean_for_api)
+        
+        # [개선 포인트] API 요청 시 상가동 매핑 방지를 위해 동 번호(예: 101동, 가동 등) 및 상세 호수 제거
+        query_target_for_api = re.sub(r'\s+[가-힣a-zA-Z0-9]+\s*동\s*\d*호?.*$', '', query_target)
+        query_target_for_api = re.sub(r'\s+\d+호.*$', '', query_target_for_api)
+        query_target_for_api = re.sub(r'\s+(?:지층|지하\d+층|\d+층).*$', '', query_target_for_api)
 
-        if is_new_road_address(clean_for_api):
-            base_road_addr = clean_for_api
+        if is_new_road_address(query_target_for_api):
+            base_road_addr = query_target_for_api
         else:
-            url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(clean_for_api)}"
+            url = f"https://maps.apigw.ntruss.com/map-geocode/v2/geocode?query={urllib.parse.quote(query_target_for_api)}"
             headers = {
                 "X-NCP-APIGW-API-KEY-ID": NAVER_CLIENT_ID,
                 "X-NCP-APIGW-API-KEY": NAVER_CLIENT_SECRET
@@ -279,7 +282,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 동·호수 예외 보존 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 도로명 주소 변환 및 아파트 주소 정밀 보정 처리가 이루어집니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -355,6 +358,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v14.xlsx",
+            file_name="우편배송_최종완벽정리_v15.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
