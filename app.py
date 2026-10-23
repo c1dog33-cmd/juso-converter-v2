@@ -168,7 +168,7 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 스마트 통합 마스터 주소 변환 엔진 ] ---
+# --- [ 최종 통합 마스터 주소 변환 엔진 ] ---
 def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
@@ -179,26 +179,24 @@ def ultimate_master_converter(keyword, original_zip=""):
         if target_key in kw_str:
             return override_addr
             
-    trailing_paren = ""
-    m_paren = re.search(r'(\([^)]+\))\s*$', kw_str)
-    if m_paren:
-        trailing_paren = m_paren.group(1).strip()
-        kw_str = kw_str[:m_paren.start()].strip()
-        
+    # 1. 상세 호수 / 배송 메모 보호 (맨 뒤)
     tail_detail = ""
     m_detail = re.search(r'(\s+\d+동\s*\d+호.*?(?:문앞|경비실)?|\s+\d+호.*?(?:문앞)?|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
     if m_detail:
         tail_detail = m_detail.group(1).strip()
         kw_str = kw_str[:m_detail.start()].strip()
 
-    m_paren2 = re.search(r'(\([^)]+\))\s*$', kw_str)
-    if m_paren2:
-        trailing_paren = m_paren2.group(1).strip()
-        kw_str = kw_str[:m_paren2.start()].strip()
-        m_detail2 = re.search(r'(\s+\d+동\s*\d+호.*?(?:문앞|경비실)?|\s+\d+호.*?(?:문앞)?|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
-        if m_detail2:
-            tail_detail = m_detail2.group(1).strip()
-            kw_str = kw_str[:m_detail2.start()].strip()
+    # 2. 괄호 영역 추출 보호
+    trailing_paren = ""
+    m_paren = re.search(r'(\([^)]+\))\s*$', kw_str)
+    if m_paren:
+        trailing_paren = m_paren.group(1).strip()
+        kw_str = kw_str[:m_paren.start()].strip()
+        
+    m_detail2 = re.search(r'(\s+\d+동\s*\d+호.*?(?:문앞|경비실)?|\s+\d+호.*?(?:문앞)?|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
+    if m_detail2 and not tail_detail:
+        tail_detail = m_detail2.group(1).strip()
+        kw_str = kw_str[:m_detail2.start()].strip()
 
     brands = [
         '아파트', '빌라', '빌', '맨션', '타운', '오피스텔', '주공', '단지',
@@ -258,7 +256,7 @@ def ultimate_master_converter(keyword, original_zip=""):
     if not base_road_addr:
         base_road_addr = api_query_part
 
-    # 스마트 괄호 정리 규칙: 괄호 안의 아파트명이 본문(앞쪽)에 이미 존재할 때만 법정동만 남기고, 없으면 원형 보존
+    # 스마트 괄호 정리 및 동일 건물명 유지 규칙
     if trailing_paren:
         match_p = re.search(r'\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', trailing_paren)
         if match_p:
@@ -288,7 +286,7 @@ def ultimate_master_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("스마트 괄호 보호 규칙 및 상세 동·호수 보호가 완벽하게 적용된 최종 버전입니다.")
+st.write("모든 예외 규칙과 스마트 괄호 보호 규칙이 완벽하게 적용된 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -364,6 +362,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal_Smart.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_Ultimate.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
