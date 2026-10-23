@@ -95,14 +95,15 @@ def pre_process_address(addr_str):
     # 5. 슬래시 형태(105/2202)를 105동 2202호로 변환
     s = re.sub(r'\b(\d+)\s*/\s*(\d+)\b', r'\1동 \2호', s)
     
-    # 6. 아파트/빌라명 뒤의 하이픈 동·호수 변환
+    # 6. 아파트/빌라명 및 주요 브랜드 뒤의 하이픈 동·호수 변환 (e편한세상 등 확장 적용)
     def replace_bldg_hyphen(match):
         prefix = match.group(1)
         d = match.group(2)
         h = match.group(3)
         return f"{prefix} {d}동 {h}호"
     
-    s = re.sub(r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운)\s+(\d{1,4})-(\d{1,4})호?', replace_bldg_hyphen, s)
+    brands_pattern = r'([가-힣A-Za-z0-9]+아파트|[가-힣A-Za-z0-9]+빌라|[가-힣A-Za-z0-9]+빌|[가-힣A-Za-z0-9]+맨션|[가-힣A-Za-z0-9]+타운|자이|푸르지오|힐스테이트|래미안|아이파크|캐슬|e편한세상|편한세상|더샵|데시앙|뷰|써밋|리슈빌|하늘채|포레나|우미린|트루엘|코아루|휴먼시아)'
+    s = re.sub(rf'{brands_pattern}\s+(\d{{1,4}})-(\d{{1,4}})호?', replace_bldg_hyphen, s)
     s = re.sub(r'\b(\d{1,4})-(\d{1,4})호\b', r'\1동 \2호', s)
 
     # 7. 한글 및 영문 보조 동 포맷팅 (가동, a동 등)
@@ -271,7 +272,8 @@ def master_juso_converter(keyword, original_zip=""):
         if part in tail_part:
             tail_part = tail_part.replace(part, "", 1)
             
-    tail_part = re.sub(r'\s+[가-힣]+(?:동|리)\s+\d+(?:-\d+)?', '', tail_part)
+    # 안전하게 번지수나 불필요한 법정동 잔여물 제거 (상세 동·호수 숫자는 보호)
+    tail_part = re.sub(r'\s+[가-힣]+동\s+\d+호.*$', '', tail_part)
     tail_part = ' '.join(tail_part.split())
     
     parts = [base_road_addr]
@@ -289,7 +291,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 신주소 변환 및 중복 지명 자동 정제 처리가 이루어집니다.")
+st.write("엑셀 파일을 업로드하면 네이버 주소 API를 통해 브랜드 아파트 및 상세 동·호수까지 완벽하게 정돈됩니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -365,6 +367,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v18.xlsx",
+            file_name="우편배송_최종완벽정리_v19.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
