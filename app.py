@@ -168,8 +168,8 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 최종 완벽 통합 마스터 주소 변환 엔진 ] ---
-def master_juso_converter(keyword, original_zip=""):
+# --- [ 최종 스마트 통합 마스터 주소 변환 엔진 ] ---
+def ultimate_master_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
@@ -179,14 +179,12 @@ def master_juso_converter(keyword, original_zip=""):
         if target_key in kw_str:
             return override_addr
             
-    # 1. 괄호 영역 추출 보호
     trailing_paren = ""
     m_paren = re.search(r'(\([^)]+\))\s*$', kw_str)
     if m_paren:
         trailing_paren = m_paren.group(1).strip()
         kw_str = kw_str[:m_paren.start()].strip()
         
-    # 2. 상세 호수 / 배송 메모 보호 (예: 207호, 311호, 102동 1902호 문앞 등)
     tail_detail = ""
     m_detail = re.search(r'(\s+\d+동\s*\d+호.*?(?:문앞|경비실)?|\s+\d+호.*?(?:문앞)?|\s+지하\d+호|\s+\d+층|\s+\w+관\s+\d+호)\s*$', kw_str)
     if m_detail:
@@ -260,7 +258,18 @@ def master_juso_converter(keyword, original_zip=""):
     if not base_road_addr:
         base_road_addr = api_query_part
 
-    # 최종 조합: 도로명 주소 + 아파트명/꼬리말 + 괄호 + 상세 호수 및 메모 (맨 뒤)
+    # 스마트 괄호 정리 규칙: 괄호 안의 아파트명이 본문(앞쪽)에 이미 존재할 때만 법정동만 남기고, 없으면 원형 보존
+    if trailing_paren:
+        match_p = re.search(r'\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', trailing_paren)
+        if match_p:
+            legal_dong = match_p.group(1).strip()
+            apt_in_paren = match_p.group(2).strip()
+            main_text = f"{base_road_addr} {tail_part}"
+            if apt_in_paren in main_text:
+                trailing_paren = f"( {legal_dong} )"
+            else:
+                trailing_paren = f"( {legal_dong}, {apt_in_paren} )"
+
     parts = [base_road_addr]
     if tail_part and tail_part not in base_road_addr:
         parts.append(tail_part)
@@ -279,7 +288,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("모든 예외 규칙과 상세 동·호수 보호, 신주소 변환이 완벽하게 적용된 최종 버전입니다.")
+st.write("스마트 괄호 보호 규칙 및 상세 동·호수 보호가 완벽하게 적용된 최종 버전입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -310,7 +319,7 @@ if uploaded_file is not None:
                 converted_addrs = []
                 for i, row in df.iterrows():
                     orig_zip = str(row['우편번호']).zfill(5) if '우편번호' in df.columns and not pd.isna(row['우편번호']) else ""
-                    res = master_juso_converter(row['배송지'], original_zip=orig_zip)
+                    res = ultimate_master_converter(row['배송지'], original_zip=orig_zip)
                     converted_addrs.append(res)
                     progress_bar.progress((i + 1) / total)
                     
@@ -355,6 +364,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_vFinal.xlsx",
+            file_name="우편배송_최종완벽정리_vFinal_Smart.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
