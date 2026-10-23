@@ -47,6 +47,17 @@ def remove_stray_province(addr_str):
             new_tokens.append(tok)
     return ' '.join(new_tokens)
 
+# --- [ 괄호 속 중복 아파트명 제거 및 법정동만 남기는 함수 ] ---
+def clean_parentheses(addr_str):
+    if not addr_str:
+        return addr_str
+    s = str(addr_str).strip()
+    match = re.search(r'\(\s*([가-힣]+동)\s*,\s*([^)]+)\s*\)', s)
+    if match:
+        legal_dong = match.group(1).strip()
+        s = s.replace(match.group(0), f"( {legal_dong} )")
+    return ' '.join(s.split())
+
 # --- [ 상품명 정제 함수 ] ---
 def clean_product_name(val):
     if pd.isna(val) or not str(val).strip():
@@ -145,12 +156,13 @@ def clean_product_name(val):
         
     return result_str
 
-# --- [ 정밀 마스터 주소 변환 엔진 ] ---
+# --- [ 최종 통합 마스터 주소 변환 엔진 ] ---
 def master_juso_converter(keyword, original_zip=""):
     if not keyword or pd.isna(keyword):
         return keyword
         
     kw_str = str(keyword).strip()
+    kw_str = clean_parentheses(kw_str)
     
     for target_key, override_addr in SPECIAL_EXCEPTIONS.items():
         if target_key in kw_str:
@@ -183,6 +195,9 @@ def master_juso_converter(keyword, original_zip=""):
         q = re.sub(r'\s+\d+호.*$', '', q)
         api_query_part = q
         tail_part = kw_str[len(q):].strip()
+
+    # 중간 불필요한 구 주소 지번 제거 (예: 명륜동 857 등)
+    tail_part = re.sub(r'\s+[가-힣]+동\s+\d+(?:-\d+)?(?=\s+\d+동)', '', tail_part)
 
     for b in brands:
         if b in tail_part:
@@ -233,7 +248,7 @@ def master_juso_converter(keyword, original_zip=""):
 st.set_page_config(page_title="스마트샵 주소 변환기", page_icon="🛍️", layout="centered")
 
 st.title("🛍️ 스마트샵 주소 변환 & 엑셀 수정 (네이버 API 연동)")
-st.write("아파트 브랜드명 앞 지번 영역만 분리하여 신주소로 정밀 변환 및 동·호수 정리가 이루어집니다.")
+st.write("요청하신 모든 규칙(정밀 신주소 변환, 브랜드 하이픈 동·호수 정렬, 중복 괄호 정돈)이 적용된 최종 변환기입니다.")
 
 uploaded_file = st.file_uploader("변환할 엑셀 파일(.xlsx, .xls, .xlsb)을 업로드하세요", type=["xlsx", "xls", "xlsb"])
 
@@ -309,6 +324,6 @@ if uploaded_file is not None:
         st.download_button(
             label="📥 변환된 엑셀 파일 다운로드",
             data=st.session_state.excel_data,
-            file_name="우편배송_최종완벽정리_v22.xlsx",
+            file_name="우편배송_최종완벽정리_v23.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
